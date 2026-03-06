@@ -244,6 +244,15 @@ async def admin_clear_logs(_=Depends(verify_admin)):
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 if os.path.isdir(FRONTEND_DIR):
+    # Serve /assets/ statically to prevent proxy catch-all from intercepting JS/CSS
+    assets_dir = os.path.join(FRONTEND_DIR, "assets")
+    if os.path.isdir(assets_dir):
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
     @app.get("/admin/{full_path:path}")
     async def serve_admin(full_path: str):
         file_path = os.path.join(FRONTEND_DIR, full_path)

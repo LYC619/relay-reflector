@@ -11,7 +11,7 @@ services:
     network_mode: host
     environment:
       - UPSTREAM_URL=${UPSTREAM_URL:-http://127.0.0.1:3000}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-relay123}
       - PORT=${PORT:-7891}
     volumes:
       - proxy-data:/data
