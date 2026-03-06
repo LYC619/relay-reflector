@@ -7,7 +7,7 @@ from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,8 +23,6 @@ UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:3000")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 PORT = int(os.environ.get("PORT", "7891"))
 
-# Will be updated from DB on startup
-_current_password = ADMIN_PASSWORD
 
 
 async def _log_cleanup_task():
@@ -44,12 +42,12 @@ async def _log_cleanup_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _current_password
+    global ADMIN_PASSWORD
     await init_db()
-    # Load persisted password if exists
-    saved_pw = await get_setting("admin_password")
+    # 从数据库读取持久化的密码
+    saved_pw = await get_setting("admin_password", None)
     if saved_pw:
-        _current_password = saved_pw
+        ADMIN_PASSWORD = saved_pw
     # Start background cleanup task
     cleanup_task = asyncio.create_task(_log_cleanup_task())
     yield
@@ -88,7 +86,7 @@ def get_client_ip(request: Request) -> str:
 
 def verify_admin(request: Request):
     auth = request.headers.get("x-admin-password", "")
-    if auth != _current_password:
+    if auth != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
@@ -97,7 +95,7 @@ def verify_admin(request: Request):
 @app.post("/admin/api/login")
 async def admin_login(request: Request):
     body = await request.json()
-    if body.get("password") == _current_password:
+    if body.get("password") == ADMIN_PASSWORD:
         return {"ok": True}
     raise HTTPException(status_code=401, detail="Wrong password")
 
@@ -170,19 +168,19 @@ async def admin_test_upstream(upstream_id: int, _=Depends(verify_admin)):
     target = next((u for u in upstreams if u["id"] == upstream_id), None)
     if not target:
         raise HTTPException(404, "Not found")
-    base_url = target["url"].rstrip("/")
+    base_url = target['url'].rstrip('/')
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Try /api/status first
-            resp = await client.get(f"{base_url}/api/status")
-            if resp.status_code == 200:
-                return {"status": resp.status_code, "ok": True, "body": resp.text[:500]}
-            # Fallback to /v1/models
-            resp2 = await client.get(f"{base_url}/v1/models")
-            if resp2.status_code == 200:
-                return {"status": resp2.status_code, "ok": True, "body": resp2.text[:500]}
-            # Both failed, return last response
-            return {"status": resp2.status_code, "ok": False, "body": resp2.text[:500]}
+            # 先试 /api/status
+            try:
+                resp = await client.get(f"{base_url}/api/status")
+                if resp.status_code == 200:
+                    return {"status": resp.status_code, "ok": True, "body": resp.text[:500]}
+            except Exception:
+                pass
+            # 回退到 /v1/models
+            resp = await client.get(f"{base_url}/v1/models")
+            return {"status": resp.status_code, "ok": resp.status_code == 200, "body": resp.text[:500]}
     except Exception as e:
         return {"status": 0, "ok": False, "body": str(e)}
 
@@ -227,11 +225,11 @@ async def admin_set_settings(request: Request, _=Depends(verify_admin)):
 
 @app.post("/admin/api/settings/change-password")
 async def admin_change_password(request: Request, _=Depends(verify_admin)):
-    global _current_password
+    global ADMIN_PASSWORD
     body = await request.json()
-    new_pw = body["password"]
-    _current_password = new_pw
-    await set_setting("admin_password", new_pw)
+    new_password = body["password"]
+    ADMIN_PASSWORD = new_password
+    await set_setting("admin_password", new_password)
     return {"ok": True}
 
 
@@ -241,14 +239,17 @@ async def admin_clear_logs(_=Depends(verify_admin)):
     return {"ok": True}
 
 
-# ─── Serve frontend (StaticFiles mount for SPA) ─────────────
+# ─── Serve frontend ─────────────────────────────────────────
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 if os.path.isdir(FRONTEND_DIR):
-    # NOTE: All /admin/api/* routes are registered above, so they take priority.
-    # StaticFiles with html=True handles SPA fallback (returns index.html for unknown paths).
-    app.mount("/admin", StaticFiles(directory=FRONTEND_DIR, html=True), name="admin-static")
+    @app.get("/admin/{full_path:path}")
+    async def serve_admin(full_path: str):
+        file_path = os.path.join(FRONTEND_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
 # ─── Transparent Proxy ──────────────────────────────────────
