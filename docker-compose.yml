@@ -1,0 +1,17 @@
+version: "3.8"
+
+services:
+  ai-proxy:
+    build: .
+    ports:
+      - "${PORT:-7891}:${PORT:-7891}"
+    environment:
+      - UPSTREAM_URL=${UPSTREAM_URL:-http://127.0.0.1:3000}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - PORT=${PORT:-7891}
+    volumes:
+      - proxy-data:/data
+    restart: unless-stopped
+
+volumes:
+  proxy-data:
