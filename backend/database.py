@@ -1,12 +1,14 @@
 import aiosqlite
+import asyncio
 import json
 import os
 from datetime import datetime
 
 DB_PATH = os.environ.get("DB_PATH", "/data/proxy.db")
 
-# Global connection
+# Global connection and write lock
 _db = None
+_write_lock = asyncio.Lock()
 
 
 async def get_db():
@@ -79,57 +81,44 @@ async def init_db():
         )
     """)
     # Migrate: add new columns if missing
-    try:
-        await db.execute("ALTER TABLE logs ADD COLUMN thinking_content TEXT")
-    except Exception:
-        pass
-    try:
-        await db.execute("ALTER TABLE logs ADD COLUMN tool_calls TEXT")
-    except Exception:
-        pass
-    try:
-        await db.execute("ALTER TABLE logs ADD COLUMN upstream_name TEXT")
-    except Exception:
-        pass
-    try:
-        await db.execute("ALTER TABLE logs ADD COLUMN status_code INTEGER")
-    except Exception:
-        pass
-    try:
-        await db.execute("ALTER TABLE logs ADD COLUMN error_message TEXT")
-    except Exception:
-        pass
+    for col in ["thinking_content TEXT", "tool_calls TEXT", "upstream_name TEXT",
+                "status_code INTEGER", "error_message TEXT"]:
+        try:
+            await db.execute(f"ALTER TABLE logs ADD COLUMN {col}")
+        except Exception:
+            pass
     await db.commit()
 
 
 async def insert_log(data: dict):
-    db = await get_db()
-    await db.execute("""
-        INSERT INTO logs (timestamp, model, messages, assistant_reply, thinking_content, tool_calls,
-            prompt_tokens, completion_tokens, total_tokens,
-            duration_ms, client_ip, api_key_hint, path, method,
-            upstream_name, status_code, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data.get("timestamp", datetime.utcnow().isoformat()),
-        data.get("model"),
-        json.dumps(data.get("messages"), ensure_ascii=False) if data.get("messages") else None,
-        data.get("assistant_reply"),
-        data.get("thinking_content"),
-        json.dumps(data.get("tool_calls"), ensure_ascii=False) if data.get("tool_calls") else None,
-        data.get("prompt_tokens"),
-        data.get("completion_tokens"),
-        data.get("total_tokens"),
-        data.get("duration_ms"),
-        data.get("client_ip"),
-        data.get("api_key_hint"),
-        data.get("path"),
-        data.get("method"),
-        data.get("upstream_name"),
-        data.get("status_code"),
-        data.get("error_message"),
-    ))
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("""
+            INSERT INTO logs (timestamp, model, messages, assistant_reply, thinking_content, tool_calls,
+                prompt_tokens, completion_tokens, total_tokens,
+                duration_ms, client_ip, api_key_hint, path, method,
+                upstream_name, status_code, error_message)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            data.get("timestamp", datetime.utcnow().isoformat()),
+            data.get("model"),
+            json.dumps(data.get("messages"), ensure_ascii=False) if data.get("messages") else None,
+            data.get("assistant_reply"),
+            data.get("thinking_content"),
+            json.dumps(data.get("tool_calls"), ensure_ascii=False) if data.get("tool_calls") else None,
+            data.get("prompt_tokens"),
+            data.get("completion_tokens"),
+            data.get("total_tokens"),
+            data.get("duration_ms"),
+            data.get("client_ip"),
+            data.get("api_key_hint"),
+            data.get("path"),
+            data.get("method"),
+            data.get("upstream_name"),
+            data.get("status_code"),
+            data.get("error_message"),
+        ))
+        await db.commit()
 
 
 async def get_logs(model=None, start_time=None, end_time=None, status_code=None,
@@ -189,7 +178,6 @@ async def get_dashboard_stats():
     error_count = (await cursor.fetchone())[0]
     error_rate = round(error_count / today_requests * 100, 1) if today_requests > 0 else 0
 
-    # Hourly requests last 24h
     cursor = await db.execute("""
         SELECT strftime('%Y-%m-%dT%H:00:00', timestamp) as hour, COUNT(*) as count,
                COALESCE(SUM(total_tokens),0) as tokens
@@ -199,7 +187,6 @@ async def get_dashboard_stats():
     """)
     hourly = [dict(zip(["hour", "count", "tokens"], r)) for r in await cursor.fetchall()]
 
-    # Top models
     cursor = await db.execute("""
         SELECT model, COUNT(*) as count FROM logs
         WHERE timestamp >= ? AND model IS NOT NULL
@@ -207,7 +194,6 @@ async def get_dashboard_stats():
     """, (today,))
     top_models = [dict(zip(["model", "count"], r)) for r in await cursor.fetchall()]
 
-    # Recent logs
     cursor = await db.execute(
         "SELECT id, timestamp, model, total_tokens, duration_ms, status_code, api_key_hint, upstream_name FROM logs ORDER BY id DESC LIMIT 10"
     )
@@ -235,36 +221,39 @@ async def get_upstreams():
 
 
 async def add_upstream(name: str, url: str):
-    db = await get_db()
-    now = datetime.utcnow().isoformat()
-    # If first upstream, make it active
-    cursor = await db.execute("SELECT COUNT(*) FROM upstreams")
-    count = (await cursor.fetchone())[0]
-    is_active = 1 if count == 0 else 0
-    await db.execute(
-        "INSERT INTO upstreams (name, url, is_active, created_at) VALUES (?, ?, ?, ?)",
-        (name, url, is_active, now)
-    )
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        now = datetime.utcnow().isoformat()
+        cursor = await db.execute("SELECT COUNT(*) FROM upstreams")
+        count = (await cursor.fetchone())[0]
+        is_active = 1 if count == 0 else 0
+        await db.execute(
+            "INSERT INTO upstreams (name, url, is_active, created_at) VALUES (?, ?, ?, ?)",
+            (name, url, is_active, now)
+        )
+        await db.commit()
 
 
 async def update_upstream(upstream_id: int, name: str, url: str):
-    db = await get_db()
-    await db.execute("UPDATE upstreams SET name=?, url=? WHERE id=?", (name, url, upstream_id))
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("UPDATE upstreams SET name=?, url=? WHERE id=?", (name, url, upstream_id))
+        await db.commit()
 
 
 async def delete_upstream(upstream_id: int):
-    db = await get_db()
-    await db.execute("DELETE FROM upstreams WHERE id=?", (upstream_id,))
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("DELETE FROM upstreams WHERE id=?", (upstream_id,))
+        await db.commit()
 
 
 async def activate_upstream(upstream_id: int):
-    db = await get_db()
-    await db.execute("UPDATE upstreams SET is_active=0")
-    await db.execute("UPDATE upstreams SET is_active=1 WHERE id=?", (upstream_id,))
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("UPDATE upstreams SET is_active=0")
+        await db.execute("UPDATE upstreams SET is_active=1 WHERE id=?", (upstream_id,))
+        await db.commit()
 
 
 async def get_active_upstream():
@@ -278,13 +267,14 @@ async def get_active_upstream():
 
 
 async def increment_upstream_stats(upstream_id: int):
-    db = await get_db()
-    now = datetime.utcnow().isoformat()
-    await db.execute(
-        "UPDATE upstreams SET total_requests=total_requests+1, last_used_at=? WHERE id=?",
-        (now, upstream_id)
-    )
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        now = datetime.utcnow().isoformat()
+        await db.execute(
+            "UPDATE upstreams SET total_requests=total_requests+1, last_used_at=? WHERE id=?",
+            (now, upstream_id)
+        )
+        await db.commit()
 
 
 # ─── API Key tracking ───────────────────────────────────────
@@ -292,21 +282,22 @@ async def increment_upstream_stats(upstream_id: int):
 async def track_api_key(key_hint: str, tokens: int = 0):
     if not key_hint:
         return
-    db = await get_db()
-    now = datetime.utcnow().isoformat()
-    cursor = await db.execute("SELECT id FROM api_keys WHERE key_hint=?", (key_hint,))
-    row = await cursor.fetchone()
-    if row:
-        await db.execute(
-            "UPDATE api_keys SET last_seen_at=?, total_requests=total_requests+1, total_tokens=total_tokens+? WHERE key_hint=?",
-            (now, tokens or 0, key_hint)
-        )
-    else:
-        await db.execute(
-            "INSERT INTO api_keys (key_hint, first_seen_at, last_seen_at, total_requests, total_tokens) VALUES (?, ?, ?, 1, ?)",
-            (key_hint, now, now, tokens or 0)
-        )
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        now = datetime.utcnow().isoformat()
+        cursor = await db.execute("SELECT id FROM api_keys WHERE key_hint=?", (key_hint,))
+        row = await cursor.fetchone()
+        if row:
+            await db.execute(
+                "UPDATE api_keys SET last_seen_at=?, total_requests=total_requests+1, total_tokens=total_tokens+? WHERE key_hint=?",
+                (now, tokens or 0, key_hint)
+            )
+        else:
+            await db.execute(
+                "INSERT INTO api_keys (key_hint, first_seen_at, last_seen_at, total_requests, total_tokens) VALUES (?, ?, ?, 1, ?)",
+                (key_hint, now, now, tokens or 0)
+            )
+        await db.commit()
 
 
 async def get_api_keys():
@@ -317,9 +308,10 @@ async def get_api_keys():
 
 
 async def update_api_key_note(key_id: int, note: str):
-    db = await get_db()
-    await db.execute("UPDATE api_keys SET note=? WHERE id=?", (note, key_id))
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("UPDATE api_keys SET note=? WHERE id=?", (note, key_id))
+        await db.commit()
 
 
 # ─── Settings ───────────────────────────────────────────────
@@ -332,12 +324,13 @@ async def get_setting(key: str, default: str = None):
 
 
 async def set_setting(key: str, value: str):
-    db = await get_db()
-    await db.execute(
-        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-        (key, value)
-    )
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            (key, value)
+        )
+        await db.commit()
 
 
 async def get_db_size():
@@ -348,16 +341,18 @@ async def get_db_size():
 
 
 async def clear_all_logs():
-    db = await get_db()
-    await db.execute("DELETE FROM logs")
-    await db.execute("VACUUM")
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute("DELETE FROM logs")
+        await db.execute("VACUUM")
+        await db.commit()
 
 
 async def clean_old_logs(days: int):
-    db = await get_db()
-    await db.execute(
-        "DELETE FROM logs WHERE timestamp < datetime('now', ? || ' days')",
-        (f"-{days}",)
-    )
-    await db.commit()
+    async with _write_lock:
+        db = await get_db()
+        await db.execute(
+            "DELETE FROM logs WHERE timestamp < datetime('now', ? || ' days')",
+            (f"-{days}",)
+        )
+        await db.commit()
