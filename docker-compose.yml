@@ -1,10 +1,14 @@
+# AI Proxy Relay Reflector
+# 使用 host 网络模式，容器直接共享宿主机网络
+# 这样 UPSTREAM_URL 可以使用 127.0.0.1 访问宿主机上的服务
+# 注意：host 模式下不需要 ports 映射，服务直接监听在宿主机的 PORT 端口
+
 version: "3.8"
 
 services:
   ai-proxy:
     build: .
-    ports:
-      - "${PORT:-7891}:${PORT:-7891}"
+    network_mode: host
     environment:
       - UPSTREAM_URL=${UPSTREAM_URL:-http://127.0.0.1:3000}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}

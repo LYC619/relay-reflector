@@ -31,12 +31,16 @@ export async function login(password: string) {
   return true;
 }
 
+// ─── Log types ──────────────────────────────────────────────
+
 export interface LogEntry {
   id: number;
   timestamp: string;
   model: string;
   messages: string;
   assistant_reply: string;
+  thinking_content: string | null;
+  tool_calls: string | null;
   prompt_tokens: number | null;
   completion_tokens: number | null;
   total_tokens: number | null;
@@ -45,18 +49,25 @@ export interface LogEntry {
   api_key_hint: string;
   path: string;
   method: string;
+  upstream_name: string | null;
+  status_code: number | null;
+  error_message: string | null;
 }
 
 export async function fetchLogs(params: {
   model?: string;
   start_time?: string;
   end_time?: string;
+  status_code?: number;
+  upstream_name?: string;
   page?: number;
 }) {
   const qs = new URLSearchParams();
   if (params.model) qs.set("model", params.model);
   if (params.start_time) qs.set("start_time", params.start_time);
   if (params.end_time) qs.set("end_time", params.end_time);
+  if (params.status_code) qs.set("status_code", String(params.status_code));
+  if (params.upstream_name) qs.set("upstream_name", params.upstream_name);
   if (params.page) qs.set("page", String(params.page));
   return apiFetch(`/admin/api/logs?${qs.toString()}`) as Promise<{
     logs: LogEntry[];
@@ -66,14 +77,139 @@ export async function fetchLogs(params: {
   }>;
 }
 
-export async function fetchSettings() {
-  return apiFetch("/admin/api/settings") as Promise<{ upstream_url: string }>;
+export async function exportLogs(params: { model?: string; start_time?: string; end_time?: string }) {
+  const qs = new URLSearchParams();
+  if (params.model) qs.set("model", params.model);
+  if (params.start_time) qs.set("start_time", params.start_time);
+  if (params.end_time) qs.set("end_time", params.end_time);
+  return apiFetch(`/admin/api/logs/export?${qs.toString()}`);
 }
 
-export async function updateSettings(data: { upstream_url: string }) {
+// ─── Dashboard ──────────────────────────────────────────────
+
+export interface DashboardStats {
+  today_requests: number;
+  today_tokens: number;
+  avg_duration: number;
+  error_rate: number;
+  hourly: { hour: string; count: number; tokens: number }[];
+  top_models: { model: string; count: number }[];
+  recent: {
+    id: number;
+    timestamp: string;
+    model: string;
+    total_tokens: number;
+    duration_ms: number;
+    status_code: number;
+    api_key_hint: string;
+    upstream_name: string;
+  }[];
+}
+
+export async function fetchDashboard() {
+  return apiFetch("/admin/api/dashboard") as Promise<DashboardStats>;
+}
+
+// ─── Upstreams ──────────────────────────────────────────────
+
+export interface Upstream {
+  id: number;
+  name: string;
+  url: string;
+  is_active: number;
+  total_requests: number;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export async function fetchUpstreams() {
+  return apiFetch("/admin/api/upstreams") as Promise<Upstream[]>;
+}
+
+export async function addUpstream(name: string, url: string) {
+  return apiFetch("/admin/api/upstreams", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, url }),
+  });
+}
+
+export async function updateUpstream(id: number, name: string, url: string) {
+  return apiFetch(`/admin/api/upstreams/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, url }),
+  });
+}
+
+export async function deleteUpstream(id: number) {
+  return apiFetch(`/admin/api/upstreams/${id}`, { method: "DELETE" });
+}
+
+export async function activateUpstream(id: number) {
+  return apiFetch(`/admin/api/upstreams/${id}/activate`, { method: "POST" });
+}
+
+export async function testUpstream(id: number) {
+  return apiFetch(`/admin/api/upstreams/${id}/test`, { method: "POST" }) as Promise<{
+    status: number;
+    ok: boolean;
+    body: string;
+  }>;
+}
+
+// ─── API Keys ───────────────────────────────────────────────
+
+export interface ApiKey {
+  id: number;
+  key_hint: string;
+  note: string;
+  first_seen_at: string;
+  last_seen_at: string | null;
+  total_requests: number;
+  total_tokens: number;
+}
+
+export async function fetchApiKeys() {
+  return apiFetch("/admin/api/keys") as Promise<ApiKey[]>;
+}
+
+export async function updateApiKeyNote(id: number, note: string) {
+  return apiFetch(`/admin/api/keys/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+}
+
+// ─── Settings ───────────────────────────────────────────────
+
+export interface AppSettings {
+  log_enabled: boolean;
+  log_retention_days: number;
+  db_size: number;
+}
+
+export async function fetchSettings() {
+  return apiFetch("/admin/api/settings") as Promise<AppSettings>;
+}
+
+export async function updateSettings(data: Partial<{ log_enabled: boolean; log_retention_days: number }>) {
   return apiFetch("/admin/api/settings", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
+}
+
+export async function changePassword(password: string) {
+  return apiFetch("/admin/api/settings/change-password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+}
+
+export async function clearAllLogs() {
+  return apiFetch("/admin/api/settings/clear-logs", { method: "POST" });
 }
