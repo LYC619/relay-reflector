@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import time
 import asyncio
@@ -8,7 +9,7 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -17,7 +18,7 @@ from database import (
     get_dashboard_stats, get_upstreams, add_upstream, update_upstream,
     delete_upstream, activate_upstream, get_active_upstream, increment_upstream_stats,
     get_api_keys, update_api_key_note, track_api_key,
-    get_db_size, clear_all_logs, clean_old_logs, DB_PATH,
+    get_db_size, clear_all_logs, clean_old_logs, increment_model_list_count, DB_PATH,
 )
 
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:3000")
@@ -31,6 +32,89 @@ _login_attempts = defaultdict(lambda: {"count": 0, "locked_until": 0.0})
 # Track start time for uptime
 _start_time = None
 
+
+# ─── SSE / Response parsers ─────────────────────────────────
+
+def parse_sse_response(raw_text: str) -> dict:
+    """Parse SSE text into unified result dict."""
+    content_parts = []
+    thinking_parts = []
+    tool_calls = []
+    usage = {}
+    model = None
+
+    for line in raw_text.split("\n"):
+        line = line.strip()
+        if not line.startswith("data: ") or line == "data: [DONE]":
+            continue
+        try:
+            data = json.loads(line[6:])
+            if not model and data.get("model"):
+                model = data["model"]
+            if data.get("choices"):
+                delta = data["choices"][0].get("delta", {})
+                if delta.get("content"):
+                    content_parts.append(delta["content"])
+                # thinking: support thinking / reasoning_content / reasoning
+                if delta.get("thinking"):
+                    thinking_parts.append(delta["thinking"])
+                elif delta.get("reasoning_content"):
+                    thinking_parts.append(delta["reasoning_content"])
+                elif delta.get("reasoning"):
+                    thinking_parts.append(delta["reasoning"])
+                if delta.get("tool_calls"):
+                    tool_calls.extend(delta["tool_calls"])
+            if data.get("usage"):
+                usage = data["usage"]
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass
+
+    return {
+        "content": "".join(content_parts),
+        "thinking": "".join(thinking_parts) or None,
+        "tool_calls": tool_calls or None,
+        "usage": usage,
+        "model": model,
+    }
+
+
+def parse_chat_response(json_data: dict) -> dict:
+    """Parse non-streaming chat completion JSON into unified result dict."""
+    content = ""
+    thinking = None
+    tool_calls_data = None
+
+    if json_data.get("choices"):
+        msg = json_data["choices"][0].get("message", {})
+        content = msg.get("content", "") or ""
+        thinking = msg.get("thinking") or msg.get("reasoning_content") or msg.get("reasoning")
+        if msg.get("tool_calls"):
+            tool_calls_data = msg["tool_calls"]
+
+    return {
+        "content": content,
+        "thinking": thinking,
+        "tool_calls": tool_calls_data,
+        "usage": json_data.get("usage", {}),
+        "model": json_data.get("model"),
+    }
+
+
+def extract_error_summary(raw: str, status_code: int) -> str:
+    """Extract a short error summary. If HTML, try to get <title>."""
+    if not raw:
+        return f"{status_code} Error"
+    raw = raw.strip()
+    if raw.startswith("<"):
+        # Try to extract <title>
+        m = re.search(r"<title[^>]*>(.*?)</title>", raw, re.IGNORECASE | re.DOTALL)
+        if m:
+            return m.group(1).strip()
+        return f"{status_code} Gateway Error"
+    return raw[:500]
+
+
+# ─── Lifecycle ──────────────────────────────────────────────
 
 async def _log_cleanup_task():
     """Background task: check log_retention_days every hour and clean old logs."""
@@ -112,21 +196,18 @@ async def admin_login(request: Request):
     client_ip = get_client_ip(request)
     attempt = _login_attempts[client_ip]
 
-    # Check if locked
     if attempt["locked_until"] > time.time():
         remaining = int(attempt["locked_until"] - time.time())
         raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in {remaining}s")
 
     body = await request.json()
     if body.get("password") == ADMIN_PASSWORD:
-        # Reset on success
         _login_attempts[client_ip] = {"count": 0, "locked_until": 0.0}
         return {"ok": True}
 
-    # Failed attempt
     attempt["count"] += 1
     if attempt["count"] >= 5:
-        attempt["locked_until"] = time.time() + 900  # 15 minutes
+        attempt["locked_until"] = time.time() + 900
         attempt["count"] = 0
         raise HTTPException(status_code=429, detail="Too many failed attempts. Locked for 15 minutes")
     raise HTTPException(status_code=401, detail="Wrong password")
@@ -204,7 +285,6 @@ async def admin_test_upstream(upstream_id: int, _=Depends(verify_admin)):
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             start = time.time()
-            # Try /api/status first
             try:
                 resp = await client.get(f"{base_url}/api/status")
                 latency_ms = int((time.time() - start) * 1000)
@@ -212,7 +292,6 @@ async def admin_test_upstream(upstream_id: int, _=Depends(verify_admin)):
                     return {"status": resp.status_code, "ok": True, "body": resp.text[:500], "latency_ms": latency_ms}
             except Exception:
                 pass
-            # Fallback to /v1/models
             start = time.time()
             resp = await client.get(f"{base_url}/v1/models")
             latency_ms = int((time.time() - start) * 1000)
@@ -317,10 +396,11 @@ if os.path.isdir(FRONTEND_DIR):
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
-# ─── Transparent Proxy ──────────────────────────────────────
+# ─── Unified Transparent Proxy ──────────────────────────────
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy(request: Request, path: str):
+    # Resolve upstream
     active = await get_active_upstream()
     if active:
         upstream = active["url"].rstrip("/")
@@ -339,13 +419,14 @@ async def proxy(request: Request, path: str):
 
     body = await request.body()
 
-    # Check logging enabled
+    # Check logging settings
     log_enabled = (await get_setting("log_enabled", "true")) == "true"
     log_only_errors = (await get_setting("log_only_errors", "false")) == "true"
 
-    # Parse request body for logging
-    request_data = None
+    # Detect request type
     is_chat_completion = "/chat/completions" in path
+    is_models_list = path.rstrip("/") in ("v1/models", "models")
+    request_data = None
     is_stream = False
     if body and is_chat_completion:
         try:
@@ -358,8 +439,6 @@ async def proxy(request: Request, path: str):
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("Host", None)
-
-    # Apply custom upstream headers
     try:
         custom_headers = json.loads(custom_headers_json) if custom_headers_json else {}
         for k, v in custom_headers.items():
@@ -371,154 +450,86 @@ async def proxy(request: Request, path: str):
     api_key_hint = mask_api_key(request.headers.get("authorization", ""))
     start_time = time.time()
 
+    # ── Send request to upstream (always read full response) ──
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
-        if is_stream and is_chat_completion:
-            upstream_req = client.build_request(
-                method=request.method, url=target_url, headers=headers, content=body,
-            )
-            upstream_resp = await client.send(upstream_req, stream=True)
+        resp = await client.request(
+            method=request.method, url=target_url, headers=headers, content=body,
+        )
 
-            collected_content = []
-            collected_thinking = []
-            collected_tool_calls = []
-            model_name = request_data.get("model") if request_data else None
-            usage_data = {}
-            resp_status = upstream_resp.status_code
-            error_msg = None
+    duration_ms = int((time.time() - start_time) * 1000)
+    raw_content = resp.content
+    raw_text = resp.text
 
-            line_buffer = b""
+    # ── Track /v1/models requests ──
+    if is_models_list:
+        try:
+            await increment_model_list_count()
+            if upstream_id:
+                await increment_upstream_stats(upstream_id)
+        except Exception:
+            pass
 
-            async def stream_generator():
-                nonlocal usage_data, line_buffer, error_msg
-                try:
-                    async for chunk in upstream_resp.aiter_bytes():
-                        yield chunk
-                        line_buffer += chunk
-                        while b"\n" in line_buffer:
-                            line, line_buffer = line_buffer.split(b"\n", 1)
-                            line_str = line.decode("utf-8", errors="replace").strip()
-                            if line_str.startswith("data: ") and line_str != "data: [DONE]":
-                                try:
-                                    data = json.loads(line_str[6:])
-                                    if data.get("choices"):
-                                        delta = data["choices"][0].get("delta", {})
-                                        if delta.get("content"):
-                                            collected_content.append(delta["content"])
-                                        if delta.get("thinking"):
-                                            collected_thinking.append(delta["thinking"])
-                                        if delta.get("tool_calls"):
-                                            collected_tool_calls.extend(delta["tool_calls"])
-                                    if data.get("usage"):
-                                        usage_data = data["usage"]
-                                except json.JSONDecodeError:
-                                    pass
-                except Exception:
-                    pass
-                finally:
-                    await upstream_resp.aclose()
-                    should_log = log_enabled and (not log_only_errors or resp_status != 200)
-                    if should_log:
-                        duration_ms = int((time.time() - start_time) * 1000)
-                        log_data = {
-                            "timestamp": datetime.utcnow().isoformat(),
-                            "model": model_name,
-                            "messages": request_data.get("messages") if request_data else None,
-                            "assistant_reply": "".join(collected_content),
-                            "thinking_content": "".join(collected_thinking) or None,
-                            "tool_calls": collected_tool_calls or None,
-                            "prompt_tokens": usage_data.get("prompt_tokens"),
-                            "completion_tokens": usage_data.get("completion_tokens"),
-                            "total_tokens": usage_data.get("total_tokens"),
-                            "duration_ms": duration_ms,
-                            "client_ip": client_ip,
-                            "api_key_hint": api_key_hint,
-                            "path": f"/{path}",
-                            "method": request.method,
-                            "upstream_name": upstream_name,
-                            "status_code": resp_status,
-                            "error_message": error_msg,
-                        }
-                        try:
-                            await insert_log(log_data)
-                            await track_api_key(api_key_hint, usage_data.get("total_tokens", 0), upstream_name)
-                            if upstream_id:
-                                await increment_upstream_stats(upstream_id)
-                        except Exception:
-                            pass
+    # ── Log chat completions ──
+    if is_chat_completion:
+        should_log = log_enabled and (not log_only_errors or resp.status_code != 200)
+        if should_log:
+            try:
+                error_msg = None
+                if resp.status_code != 200:
+                    error_msg = extract_error_summary(raw_text, resp.status_code)
 
-            resp_headers = dict(upstream_resp.headers)
-            resp_headers.pop("content-length", None)
-            resp_headers.pop("content-encoding", None)
-            resp_headers.pop("transfer-encoding", None)
+                if is_stream:
+                    parsed = parse_sse_response(raw_text)
+                else:
+                    try:
+                        resp_json = resp.json()
+                    except Exception:
+                        resp_json = {}
+                    parsed = parse_chat_response(resp_json)
 
-            return StreamingResponse(
-                stream_generator(),
-                status_code=upstream_resp.status_code,
-                headers=resp_headers,
-                media_type=upstream_resp.headers.get("content-type", "text/event-stream"),
-            )
-        else:
-            resp = await client.request(
-                method=request.method, url=target_url, headers=headers, content=body,
-            )
-            duration_ms = int((time.time() - start_time) * 1000)
+                usage = parsed["usage"]
+                model_name = (request_data.get("model") if request_data else None) or parsed["model"]
 
-            should_log = is_chat_completion and log_enabled and (not log_only_errors or resp.status_code != 200)
-            if should_log:
-                try:
-                    error_msg = None
-                    if resp.status_code != 200:
-                        error_msg = resp.text[:500]
+                log_data = {
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "model": model_name,
+                    "messages": request_data.get("messages") if request_data else None,
+                    "assistant_reply": parsed["content"],
+                    "thinking_content": parsed["thinking"],
+                    "tool_calls": parsed["tool_calls"],
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
+                    "duration_ms": duration_ms,
+                    "client_ip": client_ip,
+                    "api_key_hint": api_key_hint,
+                    "path": f"/{path}",
+                    "method": request.method,
+                    "upstream_name": upstream_name,
+                    "status_code": resp.status_code,
+                    "error_message": error_msg,
+                }
+                await insert_log(log_data)
+                await track_api_key(api_key_hint, usage.get("total_tokens", 0), upstream_name)
+                if upstream_id:
+                    await increment_upstream_stats(upstream_id)
+            except Exception:
+                pass
 
-                    resp_data = resp.json() if resp.status_code == 200 else {}
-                    assistant_reply = ""
-                    thinking_content = None
-                    tool_calls_data = None
+    # ── Return response to client ──
+    resp_headers = dict(resp.headers)
+    resp_headers.pop("content-encoding", None)
+    resp_headers.pop("transfer-encoding", None)
+    # For streamed responses read fully, must update content-length
+    if is_stream and is_chat_completion:
+        resp_headers.pop("content-length", None)
 
-                    if resp_data.get("choices"):
-                        msg = resp_data["choices"][0].get("message", {})
-                        assistant_reply = msg.get("content", "")
-                        thinking_content = msg.get("thinking") or msg.get("reasoning")
-                        if msg.get("tool_calls"):
-                            tool_calls_data = msg["tool_calls"]
-
-                    usage = resp_data.get("usage", {})
-                    log_data = {
-                        "timestamp": datetime.utcnow().isoformat(),
-                        "model": request_data.get("model") if request_data else resp_data.get("model"),
-                        "messages": request_data.get("messages") if request_data else None,
-                        "assistant_reply": assistant_reply,
-                        "thinking_content": thinking_content,
-                        "tool_calls": tool_calls_data,
-                        "prompt_tokens": usage.get("prompt_tokens"),
-                        "completion_tokens": usage.get("completion_tokens"),
-                        "total_tokens": usage.get("total_tokens"),
-                        "duration_ms": duration_ms,
-                        "client_ip": client_ip,
-                        "api_key_hint": api_key_hint,
-                        "path": f"/{path}",
-                        "method": request.method,
-                        "upstream_name": upstream_name,
-                        "status_code": resp.status_code,
-                        "error_message": error_msg,
-                    }
-                    await insert_log(log_data)
-                    await track_api_key(api_key_hint, usage.get("total_tokens", 0), upstream_name)
-                    if upstream_id:
-                        await increment_upstream_stats(upstream_id)
-                except Exception:
-                    pass
-
-            resp_headers = dict(resp.headers)
-            resp_headers.pop("content-encoding", None)
-            resp_headers.pop("transfer-encoding", None)
-
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=resp_headers,
-                media_type=resp.headers.get("content-type"),
-            )
+    return Response(
+        content=raw_content,
+        status_code=resp.status_code,
+        headers=resp_headers,
+        media_type=resp.headers.get("content-type"),
+    )
 
 
 if __name__ == "__main__":
