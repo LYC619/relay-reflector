@@ -64,7 +64,7 @@ const Index = () => {
                 <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
                   <Activity className="h-4 w-4 text-primary-foreground" />
                 </div>
-                <span className="text-sm font-bold text-sidebar-foreground truncate">Relay Reflector</span>
+                <span className="text-sm font-bold text-sidebar-foreground truncate">API Log</span>
               </div>
             </div>
 

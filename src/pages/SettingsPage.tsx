@@ -90,7 +90,7 @@ const SettingsPage = () => {
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">版本</span>
-              <span className="text-sm font-mono">{settings.version}</span>
+              <span className="text-sm font-mono">API Log v{settings.version}</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-muted-foreground">运行时长</span>

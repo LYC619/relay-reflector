@@ -24,7 +24,7 @@ from database import (
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:3000")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 PORT = int(os.environ.get("PORT", "7891"))
-VERSION = os.environ.get("RELAY_VERSION", "1.0.0")
+VERSION = os.environ.get("APP_VERSION", "1.0.0")
 
 # Login rate limiting: ip -> {"count": int, "locked_until": float}
 _login_attempts = defaultdict(lambda: {"count": 0, "locked_until": 0.0})
@@ -33,50 +33,7 @@ _login_attempts = defaultdict(lambda: {"count": 0, "locked_until": 0.0})
 _start_time = None
 
 
-# ─── SSE / Response parsers ─────────────────────────────────
-
-def parse_sse_response(raw_text: str) -> dict:
-    """Parse SSE text into unified result dict."""
-    content_parts = []
-    thinking_parts = []
-    tool_calls = []
-    usage = {}
-    model = None
-
-    for line in raw_text.split("\n"):
-        line = line.strip()
-        if not line.startswith("data: ") or line == "data: [DONE]":
-            continue
-        try:
-            data = json.loads(line[6:])
-            if not model and data.get("model"):
-                model = data["model"]
-            if data.get("choices"):
-                delta = data["choices"][0].get("delta", {})
-                if delta.get("content"):
-                    content_parts.append(delta["content"])
-                # thinking: support thinking / reasoning_content / reasoning
-                if delta.get("thinking"):
-                    thinking_parts.append(delta["thinking"])
-                elif delta.get("reasoning_content"):
-                    thinking_parts.append(delta["reasoning_content"])
-                elif delta.get("reasoning"):
-                    thinking_parts.append(delta["reasoning"])
-                if delta.get("tool_calls"):
-                    tool_calls.extend(delta["tool_calls"])
-            if data.get("usage"):
-                usage = data["usage"]
-        except (json.JSONDecodeError, KeyError, IndexError):
-            pass
-
-    return {
-        "content": "".join(content_parts),
-        "thinking": "".join(thinking_parts) or None,
-        "tool_calls": tool_calls or None,
-        "usage": usage,
-        "model": model,
-    }
-
+# ─── Response parser ────────────────────────────────────────
 
 def parse_chat_response(json_data: dict) -> dict:
     """Parse non-streaming chat completion JSON into unified result dict."""
@@ -106,7 +63,6 @@ def extract_error_summary(raw: str, status_code: int) -> str:
         return f"{status_code} Error"
     raw = raw.strip()
     if raw.startswith("<"):
-        # Try to extract <title>
         m = re.search(r"<title[^>]*>(.*?)</title>", raw, re.IGNORECASE | re.DOTALL)
         if m:
             return m.group(1).strip()
@@ -427,11 +383,15 @@ async def proxy(request: Request, path: str):
     is_chat_completion = "/chat/completions" in path
     is_models_list = path.rstrip("/") in ("v1/models", "models")
     request_data = None
-    is_stream = False
+
     if body and is_chat_completion:
         try:
             request_data = json.loads(body)
-            is_stream = request_data.get("stream", False)
+            # Force non-streaming: always get complete JSON response with usage
+            if request_data.get("stream"):
+                request_data["stream"] = False
+                request_data.pop("stream_options", None)
+                body = json.dumps(request_data).encode("utf-8")
         except json.JSONDecodeError:
             pass
 
@@ -439,6 +399,9 @@ async def proxy(request: Request, path: str):
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("Host", None)
+    # Update content-length if body was modified
+    if is_chat_completion and request_data is not None:
+        headers["content-length"] = str(len(body))
     try:
         custom_headers = json.loads(custom_headers_json) if custom_headers_json else {}
         for k, v in custom_headers.items():
@@ -450,7 +413,7 @@ async def proxy(request: Request, path: str):
     api_key_hint = mask_api_key(request.headers.get("authorization", ""))
     start_time = time.time()
 
-    # ── Send request to upstream (always read full response) ──
+    # ── Send request to upstream ──
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0, connect=30.0)) as client:
         resp = await client.request(
             method=request.method, url=target_url, headers=headers, content=body,
@@ -478,14 +441,12 @@ async def proxy(request: Request, path: str):
                 if resp.status_code != 200:
                     error_msg = extract_error_summary(raw_text, resp.status_code)
 
-                if is_stream:
-                    parsed = parse_sse_response(raw_text)
-                else:
-                    try:
-                        resp_json = resp.json()
-                    except Exception:
-                        resp_json = {}
-                    parsed = parse_chat_response(resp_json)
+                # Always non-streaming JSON response
+                try:
+                    resp_json = resp.json()
+                except Exception:
+                    resp_json = {}
+                parsed = parse_chat_response(resp_json)
 
                 usage = parsed["usage"]
                 model_name = (request_data.get("model") if request_data else None) or parsed["model"]
@@ -520,9 +481,6 @@ async def proxy(request: Request, path: str):
     resp_headers = dict(resp.headers)
     resp_headers.pop("content-encoding", None)
     resp_headers.pop("transfer-encoding", None)
-    # For streamed responses read fully, must update content-length
-    if is_stream and is_chat_completion:
-        resp_headers.pop("content-length", None)
 
     return Response(
         content=raw_content,

@@ -34,8 +34,8 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
             <Activity className="h-6 w-6 text-primary-foreground" />
           </div>
-          <h1 className="text-xl font-bold text-foreground">Relay Reflector</h1>
-          <p className="text-sm text-muted-foreground">AI API 中继记录器</p>
+          <h1 className="text-xl font-bold text-foreground">API Log</h1>
+          <p className="text-sm text-muted-foreground">AI API 对话记录器</p>
         </div>
         <div className="space-y-3">
           <div className="relative">
