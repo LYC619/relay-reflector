@@ -407,3 +407,17 @@ async def clean_old_logs(days: int):
             (f"-{days}",)
         )
         await db.commit()
+
+
+async def increment_model_list_count():
+    """Increment a simple counter for /v1/models requests in settings."""
+    async with _write_lock:
+        db = await get_db()
+        cursor = await db.execute("SELECT value FROM settings WHERE key = 'model_list_requests'")
+        row = await cursor.fetchone()
+        count = int(row[0]) if row else 0
+        await db.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES ('model_list_requests', ?)",
+            (str(count + 1),)
+        )
+        await db.commit()

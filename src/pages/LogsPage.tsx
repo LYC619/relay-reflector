@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft, ChevronRight, Search, Clock, Cpu, MessageSquare,
-  Download, ChevronDown, Brain, Wrench, Copy, FileDown
+  Download, ChevronDown, Brain, Wrench, Copy, FileDown, AlertTriangle
 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
@@ -20,6 +20,14 @@ import remarkGfm from "remark-gfm";
 interface LogsPageProps {
   initialExpandId?: number | null;
   onConsumeExpandId?: () => void;
+}
+
+function statusColorClass(code: number | null | undefined): string {
+  if (!code) return "bg-muted text-muted-foreground";
+  if (code >= 200 && code < 300) return "bg-emerald-500/20 text-emerald-400";
+  if (code >= 400 && code < 500) return "bg-amber-500/20 text-amber-400";
+  if (code >= 500) return "bg-destructive/20 text-destructive";
+  return "bg-muted text-muted-foreground";
 }
 
 const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
@@ -173,9 +181,9 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
                 <span className="text-primary font-medium text-sm flex items-center gap-1">
                   <Cpu className="h-3.5 w-3.5" />{log.model || "—"}
                 </span>
-                <span className={`px-2 py-0.5 rounded text-xs font-mono ${
-                  log.status_code === 200 ? "bg-primary/20 text-primary" : "bg-destructive/20 text-destructive"
-                }`}>{log.status_code || "—"}</span>
+                <span className={`px-2 py-0.5 rounded text-xs font-mono ${statusColorClass(log.status_code)}`}>
+                  {log.status_code || "—"}
+                </span>
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
                 <span>{new Date(log.timestamp).toLocaleString()}</span>
@@ -276,9 +284,7 @@ function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExpo
           </span>
         </td>
         <td className="px-4 py-2.5 text-center">
-          <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono ${
-            log.status_code === 200 ? "bg-primary/20 text-primary" : "bg-destructive/20 text-destructive"
-          }`}>
+          <span className={`inline-block px-2 py-0.5 rounded text-xs font-mono ${statusColorClass(log.status_code)}`}>
             {log.status_code || "—"}
           </span>
         </td>
@@ -320,6 +326,10 @@ function MessageContent({ content }: { content: unknown }) {
   return <span>{String(content)}</span>;
 }
 
+function isHtmlContent(text: string): boolean {
+  return text.trim().startsWith("<");
+}
+
 function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }: {
   log: LogEntry;
   parseMessages: (s: string) => { role: string; content: unknown }[];
@@ -330,6 +340,7 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
   const systemMessages = messages.filter((m) => m.role === "system");
   const chatMessages = messages.filter((m) => m.role !== "system");
   const toolCalls = parseToolCalls(log.tool_calls);
+  const [showRawError, setShowRawError] = useState(false);
 
   const handleCopyContext = () => {
     try {
@@ -340,6 +351,8 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
       toast({ title: "复制失败", variant: "destructive" });
     }
   };
+
+  const hasError = log.status_code && log.status_code !== 200;
 
   return (
     <div className="space-y-3 max-w-3xl">
@@ -353,10 +366,31 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
         </Button>
       </div>
 
-      {/* Error */}
-      {log.error_message && (
-        <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-2 text-sm text-destructive">
-          <strong>错误：</strong> {log.error_message}
+      {/* Error alert box for non-200 */}
+      {hasError && (
+        <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-3 space-y-2">
+          <div className="flex items-center gap-2 text-destructive font-medium text-sm">
+            <AlertTriangle className="h-4 w-4" />
+            <span>请求失败 — HTTP {log.status_code}</span>
+          </div>
+          {log.error_message && (
+            <>
+              <p className="text-sm text-destructive/80">{log.error_message}</p>
+              {/* If original error was HTML, show collapsible raw view */}
+              {log.error_message.length < 200 && (
+                <Collapsible open={showRawError} onOpenChange={setShowRawError}>
+                  <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+                    <ChevronDown className="h-3 w-3" /> 查看原始错误
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="mt-2">
+                    <pre className="rounded bg-secondary px-3 py-2 text-xs overflow-x-auto max-h-48 text-muted-foreground">
+                      {log.error_message}
+                    </pre>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -380,8 +414,8 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
         </div>
       ))}
 
-      {/* Assistant reply with Markdown */}
-      {log.assistant_reply && (
+      {/* Assistant reply with Markdown (only for successful responses) */}
+      {log.assistant_reply && !hasError && (
         <div className="flex justify-start">
           <div className="max-w-[80%] rounded-xl px-4 py-2.5 text-sm bg-assistant-bubble">
             <div className="text-[10px] uppercase tracking-wider opacity-60 mb-1 font-semibold">assistant (response)</div>
