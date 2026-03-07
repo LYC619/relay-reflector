@@ -1,9 +1,5 @@
-FROM python:3.11-slim AS frontend-builder
-
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+# Stage 1: Build frontend
+FROM node:20-alpine AS frontend-builder
 
 WORKDIR /frontend
 COPY package.json package-lock.json ./
@@ -13,6 +9,7 @@ COPY public/ public/
 COPY src/ src/
 RUN npm run build
 
+# Stage 2: Build backend
 FROM python:3.11-slim
 
 WORKDIR /app
@@ -29,6 +26,7 @@ ENV UPSTREAM_URL=http://127.0.0.1:3000
 ENV ADMIN_PASSWORD=relay123
 ENV PORT=7891
 ENV DB_PATH=/data/proxy.db
+ENV RELAY_VERSION=1.0.0
 
 EXPOSE 7891
 

@@ -20,8 +20,8 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
     try {
       await login(password);
       onLogin();
-    } catch {
-      setError("密码错误");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "密码错误");
     } finally {
       setLoading(false);
     }

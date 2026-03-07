@@ -4,6 +4,7 @@ import time
 import asyncio
 import httpx
 from datetime import datetime
+from collections import defaultdict
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, HTTPException, Depends
@@ -16,20 +17,26 @@ from database import (
     get_dashboard_stats, get_upstreams, add_upstream, update_upstream,
     delete_upstream, activate_upstream, get_active_upstream, increment_upstream_stats,
     get_api_keys, update_api_key_note, track_api_key,
-    get_db_size, clear_all_logs, clean_old_logs,
+    get_db_size, clear_all_logs, clean_old_logs, DB_PATH,
 )
 
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://127.0.0.1:3000")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 PORT = int(os.environ.get("PORT", "7891"))
+VERSION = os.environ.get("RELAY_VERSION", "1.0.0")
 
+# Login rate limiting: ip -> {"count": int, "locked_until": float}
+_login_attempts = defaultdict(lambda: {"count": 0, "locked_until": 0.0})
+
+# Track start time for uptime
+_start_time = None
 
 
 async def _log_cleanup_task():
     """Background task: check log_retention_days every hour and clean old logs."""
     while True:
         try:
-            await asyncio.sleep(3600)  # every hour
+            await asyncio.sleep(3600)
             days_str = await get_setting("log_retention_days", "0")
             days = int(days_str)
             if days > 0:
@@ -42,13 +49,12 @@ async def _log_cleanup_task():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global ADMIN_PASSWORD
+    global ADMIN_PASSWORD, _start_time
+    _start_time = time.time()
     await init_db()
-    # 从数据库读取持久化的密码
     saved_pw = await get_setting("admin_password", None)
     if saved_pw:
         ADMIN_PASSWORD = saved_pw
-    # Start background cleanup task
     cleanup_task = asyncio.create_task(_log_cleanup_task())
     yield
     cleanup_task.cancel()
@@ -66,6 +72,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Security middleware: nosniff header ─────────────────────
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/admin/api/"):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def mask_api_key(auth_header: str) -> str:
@@ -94,9 +109,26 @@ def verify_admin(request: Request):
 
 @app.post("/admin/api/login")
 async def admin_login(request: Request):
+    client_ip = get_client_ip(request)
+    attempt = _login_attempts[client_ip]
+
+    # Check if locked
+    if attempt["locked_until"] > time.time():
+        remaining = int(attempt["locked_until"] - time.time())
+        raise HTTPException(status_code=429, detail=f"Too many attempts. Try again in {remaining}s")
+
     body = await request.json()
     if body.get("password") == ADMIN_PASSWORD:
+        # Reset on success
+        _login_attempts[client_ip] = {"count": 0, "locked_until": 0.0}
         return {"ok": True}
+
+    # Failed attempt
+    attempt["count"] += 1
+    if attempt["count"] >= 5:
+        attempt["locked_until"] = time.time() + 900  # 15 minutes
+        attempt["count"] = 0
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Locked for 15 minutes")
     raise HTTPException(status_code=401, detail="Wrong password")
 
 
@@ -109,21 +141,21 @@ async def admin_dashboard(request: Request, _=Depends(verify_admin)):
 async def admin_get_logs(
     request: Request,
     model: str = None, start_time: str = None, end_time: str = None,
-    status_code: int = None, upstream_name: str = None,
+    status_code: int = None, upstream_name: str = None, keyword: str = None,
     page: int = 1, page_size: int = 50,
     _=Depends(verify_admin),
 ):
-    return await get_logs(model, start_time, end_time, status_code, upstream_name, page, page_size)
+    return await get_logs(model, start_time, end_time, status_code, upstream_name, keyword, page, page_size)
 
 
 @app.get("/admin/api/logs/export")
 async def admin_export_logs(
     request: Request,
     model: str = None, start_time: str = None, end_time: str = None,
-    status_code: int = None, upstream_name: str = None,
+    status_code: int = None, upstream_name: str = None, keyword: str = None,
     _=Depends(verify_admin),
 ):
-    data = await get_logs(model, start_time, end_time, status_code, upstream_name, page=1, page_size=10000)
+    data = await get_logs(model, start_time, end_time, status_code, upstream_name, keyword, page=1, page_size=10000)
     return JSONResponse(data["logs"], headers={
         "Content-Disposition": "attachment; filename=logs_export.json"
     })
@@ -139,14 +171,14 @@ async def admin_get_upstreams(_=Depends(verify_admin)):
 @app.post("/admin/api/upstreams")
 async def admin_add_upstream(request: Request, _=Depends(verify_admin)):
     body = await request.json()
-    await add_upstream(body["name"], body["url"])
+    await add_upstream(body["name"], body["url"], body.get("custom_headers", "{}"))
     return {"ok": True}
 
 
 @app.put("/admin/api/upstreams/{upstream_id}")
 async def admin_update_upstream(upstream_id: int, request: Request, _=Depends(verify_admin)):
     body = await request.json()
-    await update_upstream(upstream_id, body["name"], body["url"])
+    await update_upstream(upstream_id, body["name"], body["url"], body.get("custom_headers"))
     return {"ok": True}
 
 
@@ -171,18 +203,22 @@ async def admin_test_upstream(upstream_id: int, _=Depends(verify_admin)):
     base_url = target['url'].rstrip('/')
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # 先试 /api/status
+            start = time.time()
+            # Try /api/status first
             try:
                 resp = await client.get(f"{base_url}/api/status")
+                latency_ms = int((time.time() - start) * 1000)
                 if resp.status_code == 200:
-                    return {"status": resp.status_code, "ok": True, "body": resp.text[:500]}
+                    return {"status": resp.status_code, "ok": True, "body": resp.text[:500], "latency_ms": latency_ms}
             except Exception:
                 pass
-            # 回退到 /v1/models
+            # Fallback to /v1/models
+            start = time.time()
             resp = await client.get(f"{base_url}/v1/models")
-            return {"status": resp.status_code, "ok": resp.status_code == 200, "body": resp.text[:500]}
+            latency_ms = int((time.time() - start) * 1000)
+            return {"status": resp.status_code, "ok": resp.status_code == 200, "body": resp.text[:500], "latency_ms": latency_ms}
     except Exception as e:
-        return {"status": 0, "ok": False, "body": str(e)}
+        return {"status": 0, "ok": False, "body": str(e), "latency_ms": 0}
 
 
 # ─── API Key management ─────────────────────────────────────
@@ -205,11 +241,16 @@ async def admin_update_key(key_id: int, request: Request, _=Depends(verify_admin
 async def admin_get_settings(request: Request, _=Depends(verify_admin)):
     log_enabled = await get_setting("log_enabled", "true")
     log_retention_days = await get_setting("log_retention_days", "0")
+    log_only_errors = await get_setting("log_only_errors", "false")
     db_size = await get_db_size()
+    uptime = int(time.time() - _start_time) if _start_time else 0
     return {
         "log_enabled": log_enabled == "true",
         "log_retention_days": int(log_retention_days),
+        "log_only_errors": log_only_errors == "true",
         "db_size": db_size,
+        "version": VERSION,
+        "uptime_seconds": uptime,
     }
 
 
@@ -220,6 +261,8 @@ async def admin_set_settings(request: Request, _=Depends(verify_admin)):
         await set_setting("log_enabled", "true" if body["log_enabled"] else "false")
     if "log_retention_days" in body:
         await set_setting("log_retention_days", str(body["log_retention_days"]))
+    if "log_only_errors" in body:
+        await set_setting("log_only_errors", "true" if body["log_only_errors"] else "false")
     return {"ok": True}
 
 
@@ -239,12 +282,18 @@ async def admin_clear_logs(_=Depends(verify_admin)):
     return {"ok": True}
 
 
+@app.get("/admin/api/settings/backup")
+async def admin_backup(_=Depends(verify_admin)):
+    if not os.path.isfile(DB_PATH):
+        raise HTTPException(404, "Database file not found")
+    return FileResponse(DB_PATH, filename="proxy.db", media_type="application/octet-stream")
+
+
 # ─── Serve frontend ─────────────────────────────────────────
 
 FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "static")
 
 if os.path.isdir(FRONTEND_DIR):
-    # Serve /assets/ statically to prevent proxy catch-all from intercepting JS/CSS
     assets_dir = os.path.join(FRONTEND_DIR, "assets")
     if os.path.isdir(assets_dir):
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -252,6 +301,13 @@ if os.path.isdir(FRONTEND_DIR):
     @app.get("/")
     async def serve_root():
         return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
+
+    @app.get("/favicon.svg")
+    async def serve_favicon():
+        fav = os.path.join(FRONTEND_DIR, "favicon.svg")
+        if os.path.isfile(fav):
+            return FileResponse(fav, media_type="image/svg+xml")
+        raise HTTPException(404)
 
     @app.get("/admin/{full_path:path}")
     async def serve_admin(full_path: str):
@@ -265,16 +321,17 @@ if os.path.isdir(FRONTEND_DIR):
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"])
 async def proxy(request: Request, path: str):
-    # Determine upstream
     active = await get_active_upstream()
     if active:
         upstream = active["url"].rstrip("/")
         upstream_name = active["name"]
         upstream_id = active["id"]
+        custom_headers_json = active.get("custom_headers", "{}")
     else:
         upstream = UPSTREAM_URL.rstrip("/")
         upstream_name = "default"
         upstream_id = None
+        custom_headers_json = "{}"
 
     target_url = f"{upstream}/{path}"
     if request.url.query:
@@ -284,6 +341,7 @@ async def proxy(request: Request, path: str):
 
     # Check logging enabled
     log_enabled = (await get_setting("log_enabled", "true")) == "true"
+    log_only_errors = (await get_setting("log_only_errors", "false")) == "true"
 
     # Parse request body for logging
     request_data = None
@@ -300,6 +358,14 @@ async def proxy(request: Request, path: str):
     headers = dict(request.headers)
     headers.pop("host", None)
     headers.pop("Host", None)
+
+    # Apply custom upstream headers
+    try:
+        custom_headers = json.loads(custom_headers_json) if custom_headers_json else {}
+        for k, v in custom_headers.items():
+            headers[k] = v
+    except (json.JSONDecodeError, AttributeError):
+        pass
 
     client_ip = get_client_ip(request)
     api_key_hint = mask_api_key(request.headers.get("authorization", ""))
@@ -320,16 +386,13 @@ async def proxy(request: Request, path: str):
             resp_status = upstream_resp.status_code
             error_msg = None
 
-            # Internal line buffer for parsing SSE, separate from raw byte forwarding
             line_buffer = b""
 
             async def stream_generator():
                 nonlocal usage_data, line_buffer, error_msg
                 try:
                     async for chunk in upstream_resp.aiter_bytes():
-                        # Forward raw bytes immediately
                         yield chunk
-                        # Buffer for line-based SSE parsing
                         line_buffer += chunk
                         while b"\n" in line_buffer:
                             line, line_buffer = line_buffer.split(b"\n", 1)
@@ -353,7 +416,8 @@ async def proxy(request: Request, path: str):
                     pass
                 finally:
                     await upstream_resp.aclose()
-                    if log_enabled:
+                    should_log = log_enabled and (not log_only_errors or resp_status != 200)
+                    if should_log:
                         duration_ms = int((time.time() - start_time) * 1000)
                         log_data = {
                             "timestamp": datetime.utcnow().isoformat(),
@@ -376,7 +440,7 @@ async def proxy(request: Request, path: str):
                         }
                         try:
                             await insert_log(log_data)
-                            await track_api_key(api_key_hint, usage_data.get("total_tokens", 0))
+                            await track_api_key(api_key_hint, usage_data.get("total_tokens", 0), upstream_name)
                             if upstream_id:
                                 await increment_upstream_stats(upstream_id)
                         except Exception:
@@ -399,7 +463,8 @@ async def proxy(request: Request, path: str):
             )
             duration_ms = int((time.time() - start_time) * 1000)
 
-            if is_chat_completion and log_enabled:
+            should_log = is_chat_completion and log_enabled and (not log_only_errors or resp.status_code != 200)
+            if should_log:
                 try:
                     error_msg = None
                     if resp.status_code != 200:
@@ -438,7 +503,7 @@ async def proxy(request: Request, path: str):
                         "error_message": error_msg,
                     }
                     await insert_log(log_data)
-                    await track_api_key(api_key_hint, usage.get("total_tokens", 0))
+                    await track_api_key(api_key_hint, usage.get("total_tokens", 0), upstream_name)
                     if upstream_id:
                         await increment_upstream_stats(upstream_id)
                 except Exception:

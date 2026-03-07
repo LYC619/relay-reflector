@@ -1,11 +1,6 @@
-import { useState } from "react";
+import { useState, lazy, Suspense, useCallback } from "react";
 import { getAdminPassword } from "@/lib/api";
 import LoginPage from "@/pages/LoginPage";
-import DashboardPage from "@/pages/DashboardPage";
-import LogsPage from "@/pages/LogsPage";
-import UpstreamsPage from "@/pages/UpstreamsPage";
-import KeysPage from "@/pages/KeysPage";
-import SettingsPage from "@/pages/SettingsPage";
 import {
   LayoutDashboard, ScrollText, Globe, Key, Settings, LogOut, Activity
 } from "lucide-react";
@@ -14,6 +9,14 @@ import {
   SidebarMenu, SidebarMenuButton, SidebarMenuItem,
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
+import { useIsMobile } from "@/hooks/use-mobile";
+
+// Lazy load pages for code splitting
+const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
+const LogsPage = lazy(() => import("@/pages/LogsPage"));
+const UpstreamsPage = lazy(() => import("@/pages/UpstreamsPage"));
+const KeysPage = lazy(() => import("@/pages/KeysPage"));
+const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
 type Tab = "dashboard" | "logs" | "upstreams" | "keys" | "settings";
 
@@ -28,6 +31,13 @@ const navItems: { id: Tab; title: string; icon: typeof LayoutDashboard }[] = [
 const Index = () => {
   const [authed, setAuthed] = useState(!!getAdminPassword());
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [expandLogId, setExpandLogId] = useState<number | null>(null);
+  const isMobile = useIsMobile();
+
+  const navigateToLog = useCallback((logId: number) => {
+    setExpandLogId(logId);
+    setTab("logs");
+  }, []);
 
   if (!authed) {
     return <LoginPage onLogin={() => setAuthed(true)} />;
@@ -35,8 +45,8 @@ const Index = () => {
 
   const renderPage = () => {
     switch (tab) {
-      case "dashboard": return <DashboardPage />;
-      case "logs": return <LogsPage />;
+      case "dashboard": return <DashboardPage onNavigateToLog={navigateToLog} />;
+      case "logs": return <LogsPage initialExpandId={expandLogId} onConsumeExpandId={() => setExpandLogId(null)} />;
       case "upstreams": return <UpstreamsPage />;
       case "keys": return <KeysPage />;
       case "settings": return <SettingsPage />;
@@ -44,9 +54,9 @@ const Index = () => {
   };
 
   return (
-    <SidebarProvider>
+    <SidebarProvider defaultOpen={!isMobile}>
       <div className="min-h-screen flex w-full bg-background">
-        <Sidebar collapsible="icon">
+        <Sidebar collapsible={isMobile ? "offcanvas" : "icon"}>
           <SidebarContent>
             {/* Logo area */}
             <div className="px-4 py-4 border-b border-sidebar-border">
@@ -100,8 +110,10 @@ const Index = () => {
               {navItems.find((n) => n.id === tab)?.title}
             </h1>
           </header>
-          <main className="flex-1 p-6 overflow-auto">
-            {renderPage()}
+          <main className="flex-1 p-4 sm:p-6 overflow-auto">
+            <Suspense fallback={<p className="text-muted-foreground text-center py-12">加载中...</p>}>
+              {renderPage()}
+            </Suspense>
           </main>
         </div>
       </div>
