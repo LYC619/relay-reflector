@@ -245,7 +245,7 @@ function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExpo
   log: LogEntry;
   expanded: boolean;
   onToggle: () => void;
-  parseMessages: (s: string) => unknown[];
+  parseMessages: (s: string) => { role: string; content: unknown }[];
   parseToolCalls: (s: string | null) => unknown[];
   onExportConversation: () => void;
 }) {
@@ -325,7 +325,6 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
   parseMessages: (s: string) => { role: string; content: unknown }[];
   parseToolCalls: (s: string | null) => unknown[];
   onExportConversation: () => void;
-}) {
 }) {
   const messages = log.messages ? parseMessages(log.messages) : [];
   const systemMessages = messages.filter((m) => m.role === "system");
