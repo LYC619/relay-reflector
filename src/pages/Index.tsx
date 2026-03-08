@@ -2,7 +2,7 @@ import { useState, lazy, Suspense, useCallback } from "react";
 import { getAdminPassword } from "@/lib/api";
 import LoginPage from "@/pages/LoginPage";
 import {
-  LayoutDashboard, ScrollText, Globe, Key, Settings, LogOut, Activity
+  LayoutDashboard, ScrollText, Globe, Key, Settings, LogOut, Activity, Star
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -14,15 +14,17 @@ import { useIsMobile } from "@/hooks/use-mobile";
 // Lazy load pages for code splitting
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
 const LogsPage = lazy(() => import("@/pages/LogsPage"));
+const FavoritesPage = lazy(() => import("@/pages/FavoritesPage"));
 const UpstreamsPage = lazy(() => import("@/pages/UpstreamsPage"));
 const KeysPage = lazy(() => import("@/pages/KeysPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
-type Tab = "dashboard" | "logs" | "upstreams" | "keys" | "settings";
+type Tab = "dashboard" | "logs" | "favorites" | "upstreams" | "keys" | "settings";
 
 const navItems: { id: Tab; title: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", title: "仪表盘", icon: LayoutDashboard },
   { id: "logs", title: "请求日志", icon: ScrollText },
+  { id: "favorites", title: "Prompt 收藏", icon: Star },
   { id: "upstreams", title: "上游管理", icon: Globe },
   { id: "keys", title: "Key 统计", icon: Key },
   { id: "settings", title: "系统设置", icon: Settings },
@@ -47,6 +49,7 @@ const Index = () => {
     switch (tab) {
       case "dashboard": return <DashboardPage onNavigateToLog={navigateToLog} />;
       case "logs": return <LogsPage initialExpandId={expandLogId} onConsumeExpandId={() => setExpandLogId(null)} />;
+      case "favorites": return <FavoritesPage />;
       case "upstreams": return <UpstreamsPage />;
       case "keys": return <KeysPage />;
       case "settings": return <SettingsPage />;
