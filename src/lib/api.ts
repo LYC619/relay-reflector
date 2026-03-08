@@ -261,3 +261,33 @@ export async function downloadBackup() {
   if (!resp.ok) throw new Error("Backup failed");
   return resp.blob();
 }
+
+// ─── Log actions ────────────────────────────────────────────
+
+export async function toggleLogStar(id: number, is_starred: boolean) {
+  return apiFetch(`/admin/api/logs/${id}/star`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ is_starred }),
+  });
+}
+
+export async function updateLogTags(id: number, tags: string) {
+  return apiFetch(`/admin/api/logs/${id}/tags`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export async function updateLogNote(id: number, note: string) {
+  return apiFetch(`/admin/api/logs/${id}/note`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+}
+
+export async function fetchTags() {
+  return apiFetch("/admin/api/tags") as Promise<string[]>;
+}
