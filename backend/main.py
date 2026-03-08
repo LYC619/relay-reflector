@@ -180,10 +180,12 @@ async def admin_get_logs(
     request: Request,
     model: str = None, start_time: str = None, end_time: str = None,
     status_code: int = None, upstream_name: str = None, keyword: str = None,
+    starred: bool = False, tag: str = None,
     page: int = 1, page_size: int = 50,
     _=Depends(verify_admin),
 ):
-    return await get_logs(model, start_time, end_time, status_code, upstream_name, keyword, page, page_size)
+    return await get_logs(model, start_time, end_time, status_code, upstream_name, keyword,
+                          starred_only=starred, tag=tag, page=page, page_size=page_size)
 
 
 @app.get("/admin/api/logs/export")
