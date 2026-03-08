@@ -60,6 +60,9 @@ export interface LogEntry {
   upstream_name: string | null;
   status_code: number | null;
   error_message: string | null;
+  is_starred: number;
+  tags: string;
+  note: string;
 }
 
 export async function fetchLogs(params: {
