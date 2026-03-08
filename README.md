@@ -19,6 +19,9 @@ API Log is a lightweight, self-hosted AI API transparent proxy that automaticall
 - **Transparent Proxy** — Forward all OpenAI-compatible API requests to upstream providers
 - **Complete Token Recording** — Forces non-streaming to guarantee full `usage` data in every response
 - **Request Logging** — Record every conversation: messages, assistant replies, thinking/reasoning, tool calls, and token usage
+- **Prompt Favorites & Tags** — Star/bookmark important logs, add tags (e.g. "writing", "code", "roleplay") for quick categorization and retrieval
+- **One-Click Prompt Copy** — Copy full prompt (system + user messages) with one click for easy reuse
+- **Log Notes** — Add editable notes to any log entry to record why a prompt was interesting or where it came from
 - **Multi-Upstream Management** — Add, switch, and test multiple upstream API endpoints with custom headers
 - **API Key Statistics** — Track usage per API key with request counts, token consumption, and upstream association
 - **Admin Dashboard** — Real-time statistics with charts: hourly/daily request trends, top models, monthly totals
