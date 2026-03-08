@@ -19,11 +19,12 @@ const UpstreamsPage = lazy(() => import("@/pages/UpstreamsPage"));
 const KeysPage = lazy(() => import("@/pages/KeysPage"));
 const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
-type Tab = "dashboard" | "logs" | "upstreams" | "keys" | "settings";
+type Tab = "dashboard" | "logs" | "favorites" | "upstreams" | "keys" | "settings";
 
 const navItems: { id: Tab; title: string; icon: typeof LayoutDashboard }[] = [
   { id: "dashboard", title: "仪表盘", icon: LayoutDashboard },
   { id: "logs", title: "请求日志", icon: ScrollText },
+  { id: "favorites", title: "Prompt 收藏", icon: Star },
   { id: "upstreams", title: "上游管理", icon: Globe },
   { id: "keys", title: "Key 统计", icon: Key },
   { id: "settings", title: "系统设置", icon: Settings },
