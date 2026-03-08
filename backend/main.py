@@ -58,6 +58,67 @@ def parse_chat_response(json_data: dict) -> dict:
     }
 
 
+def parse_streaming_chunks(chunks: list) -> dict:
+    """Parse collected SSE streaming chunks into unified result dict."""
+    content_parts = []
+    thinking_parts = []
+    tool_calls_map = {}  # index -> {id, type, function: {name, arguments}}
+    usage = {}
+    model = None
+
+    for chunk in chunks:
+        if not chunk.get("choices"):
+            # Last chunk may only have usage
+            if chunk.get("usage"):
+                usage = chunk["usage"]
+            if chunk.get("model") and not model:
+                model = chunk["model"]
+            continue
+
+        if chunk.get("model") and not model:
+            model = chunk["model"]
+        if chunk.get("usage"):
+            usage = chunk["usage"]
+
+        delta = chunk["choices"][0].get("delta", {})
+
+        if delta.get("content"):
+            content_parts.append(delta["content"])
+
+        thinking = delta.get("thinking") or delta.get("reasoning_content") or delta.get("reasoning")
+        if thinking:
+            thinking_parts.append(thinking)
+
+        if delta.get("tool_calls"):
+            for tc in delta["tool_calls"]:
+                idx = tc.get("index", 0)
+                if idx not in tool_calls_map:
+                    tool_calls_map[idx] = {
+                        "id": tc.get("id", ""),
+                        "type": tc.get("type", "function"),
+                        "function": {"name": "", "arguments": ""},
+                    }
+                if tc.get("id"):
+                    tool_calls_map[idx]["id"] = tc["id"]
+                fn = tc.get("function", {})
+                if fn.get("name"):
+                    tool_calls_map[idx]["function"]["name"] = fn["name"]
+                if fn.get("arguments"):
+                    tool_calls_map[idx]["function"]["arguments"] += fn["arguments"]
+
+    content = "".join(content_parts)
+    thinking_text = "".join(thinking_parts) if thinking_parts else None
+    tool_calls_data = [tool_calls_map[k] for k in sorted(tool_calls_map)] if tool_calls_map else None
+
+    return {
+        "content": content,
+        "thinking": thinking_text,
+        "tool_calls": tool_calls_data,
+        "usage": usage,
+        "model": model,
+    }
+
+
 def extract_error_summary(raw: str, status_code: int) -> str:
     """Extract a short error summary. If HTML, try to get <title>."""
     if not raw:
