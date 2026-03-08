@@ -115,8 +115,8 @@ UPSTREAM_URL=http://127.0.0.1:3000 ADMIN_PASSWORD=yourpassword python main.py
 
 ### ⚠️ Important Notes
 
-- All streaming requests are automatically converted to non-streaming. Clients will receive the full response at once (no typewriter effect)
-- This is by design to ensure complete token usage data is always captured
+- Streaming requests are transparently proxied — clients receive SSE streams as expected while API Log captures complete conversation data in the background
+- Admin passwords are stored as SHA-256 hashes; plaintext passwords are never persisted
 - Best suited for prompt logging, debugging, and API usage auditing
 
 ### 🛠 Tech Stack
