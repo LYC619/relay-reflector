@@ -12,7 +12,7 @@
 
 API Log is a lightweight, self-hosted AI API transparent proxy that automatically records complete request context, assistant replies, and token usage for every conversation.
 
-> **Note**: API Log forces all streaming requests to non-streaming mode to ensure complete `usage` data is captured. Clients will not see a typewriter effect — this tool is designed for prompt logging and debugging scenarios.
+> **Note**: API Log now supports transparent streaming proxy — streaming requests are forwarded as-is while still logging complete conversation data in the background.
 
 ### ✨ Features
 
