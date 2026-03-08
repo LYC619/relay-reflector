@@ -139,7 +139,8 @@ async def insert_log(data: dict):
 
 
 async def get_logs(model=None, start_time=None, end_time=None, status_code=None,
-                   upstream_name=None, keyword=None, page=1, page_size=50):
+                   upstream_name=None, keyword=None, starred_only=False, tag=None,
+                   page=1, page_size=50):
     db = await get_db()
     conditions = []
     params = []
