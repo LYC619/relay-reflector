@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
-import { fetchLogs, exportLogs, LogEntry } from "@/lib/api";
+import { fetchLogs, exportLogs, LogEntry, toggleLogStar, updateLogTags, updateLogNote, fetchTags } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronLeft, ChevronRight, Search, Clock, Cpu, MessageSquare,
-  Download, ChevronDown, Brain, Wrench, Copy, FileDown, AlertTriangle
+  Download, ChevronDown, Brain, Wrench, Copy, FileDown, AlertTriangle,
+  Star, Tag, StickyNote, X, Plus, Check
 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
@@ -12,6 +14,7 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
@@ -30,6 +33,8 @@ function statusColorClass(code: number | null | undefined): string {
   return "bg-muted text-muted-foreground";
 }
 
+const PRESET_TAGS = ["写作类", "代码类", "角色扮演", "翻译", "分析", "创意"];
+
 const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -41,8 +46,11 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
   const [statusFilter, setStatusFilter] = useState("");
   const [upstreamFilter, setUpstreamFilter] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [tagFilter, setTagFilter] = useState("");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [allTags, setAllTags] = useState<string[]>([]);
   const isMobile = useIsMobile();
 
   const loadLogs = async () => {
@@ -53,6 +61,8 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
         status_code: statusFilter ? parseInt(statusFilter) : undefined,
         upstream_name: upstreamFilter || undefined,
         keyword: keyword || undefined,
+        starred: starredOnly || undefined,
+        tag: tagFilter || undefined,
         page,
       });
       setLogs(data.logs);
@@ -65,7 +75,15 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
     }
   };
 
+  const loadTags = async () => {
+    try {
+      const tags = await fetchTags();
+      setAllTags(tags);
+    } catch { /* ignore */ }
+  };
+
   useEffect(() => { loadLogs(); }, [page]);
+  useEffect(() => { loadTags(); }, []);
 
   useEffect(() => {
     if (initialExpandId) {
@@ -123,6 +141,34 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
     URL.revokeObjectURL(url);
   };
 
+  const handleToggleStar = async (log: LogEntry, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newVal = !log.is_starred;
+    try {
+      await toggleLogStar(log.id, newVal);
+      setLogs(prev => prev.map(l => l.id === log.id ? { ...l, is_starred: newVal ? 1 : 0 } : l));
+    } catch { toast({ title: "操作失败", variant: "destructive" }); }
+  };
+
+  const handleUpdateTags = async (logId: number, tags: string) => {
+    try {
+      await updateLogTags(logId, tags);
+      setLogs(prev => prev.map(l => l.id === logId ? { ...l, tags } : l));
+      loadTags();
+    } catch { toast({ title: "更新失败", variant: "destructive" }); }
+  };
+
+  const handleUpdateNote = async (logId: number, note: string) => {
+    try {
+      await updateLogNote(logId, note);
+      setLogs(prev => prev.map(l => l.id === logId ? { ...l, note } : l));
+      toast({ title: "备注已保存" });
+    } catch { toast({ title: "保存失败", variant: "destructive" }); }
+  };
+
+  // Unique tags from allTags + PRESET_TAGS
+  const availableTags = [...new Set([...allTags, ...PRESET_TAGS])].sort();
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -164,6 +210,25 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
         </Select>
         <Input placeholder="上游" value={upstreamFilter} onChange={(e) => setUpstreamFilter(e.target.value)}
           className="w-28 bg-secondary border-border" />
+        <Button
+          variant={starredOnly ? "default" : "outline"}
+          size="sm"
+          onClick={() => { setStarredOnly(!starredOnly); setPage(1); }}
+          className="gap-1"
+        >
+          <Star className={`h-3.5 w-3.5 ${starredOnly ? "fill-current" : ""}`} /> 收藏
+        </Button>
+        {allTags.length > 0 && (
+          <Select value={tagFilter} onValueChange={(v) => { setTagFilter(v === "all" ? "" : v); setPage(1); }}>
+            <SelectTrigger className="w-28 bg-secondary border-border">
+              <SelectValue placeholder="标签" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">全部标签</SelectItem>
+              {allTags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )}
         <Button onClick={() => { setPage(1); loadLogs(); }}>筛选</Button>
       </div>
 
@@ -179,6 +244,10 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
             >
               <div className="flex items-center justify-between">
                 <span className="text-primary font-medium text-sm flex items-center gap-1">
+                  <Star
+                    className={`h-3.5 w-3.5 cursor-pointer transition-colors ${log.is_starred ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`}
+                    onClick={(e) => handleToggleStar(log, e)}
+                  />
                   <Cpu className="h-3.5 w-3.5" />{log.model || "—"}
                 </span>
                 <span className={`px-2 py-0.5 rounded text-xs font-mono ${statusColorClass(log.status_code)}`}>
@@ -190,10 +259,19 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
                 <span>{log.duration_ms}ms</span>
                 <span>{log.total_tokens || 0} tok</span>
               </div>
+              {log.tags && (
+                <div className="flex flex-wrap gap-1">
+                  {log.tags.split(",").filter(Boolean).map(t => (
+                    <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>
+                  ))}
+                </div>
+              )}
               {expandedId === log.id && (
                 <div className="pt-2 border-t border-border">
                   <LogDetail log={log} parseMessages={parseMessages} parseToolCalls={parseToolCalls}
-                    onExportConversation={() => handleExportConversation(log)} />
+                    onExportConversation={() => handleExportConversation(log)}
+                    onUpdateTags={handleUpdateTags} onUpdateNote={handleUpdateNote}
+                    availableTags={availableTags} />
                 </div>
               )}
             </div>
@@ -205,27 +283,31 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-secondary/50">
+                  <th className="text-center px-2 py-2.5 text-muted-foreground font-medium w-8">★</th>
                   <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">时间</th>
                   <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">模型</th>
                   <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">上游</th>
                   <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">Token</th>
                   <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">耗时</th>
                   <th className="text-center px-4 py-2.5 text-muted-foreground font-medium">状态</th>
-                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">API Key</th>
+                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">标签</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">加载中...</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</td></tr>
                 )}
                 {!loading && logs.length === 0 && (
-                  <tr><td colSpan={7} className="text-center py-8 text-muted-foreground">暂无记录</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">暂无记录</td></tr>
                 )}
                 {logs.map((log) => (
                   <LogRow key={log.id} log={log} expanded={expandedId === log.id}
                     onToggle={() => setExpandedId(expandedId === log.id ? null : log.id)}
                     parseMessages={parseMessages} parseToolCalls={parseToolCalls}
-                    onExportConversation={() => handleExportConversation(log)} />
+                    onExportConversation={() => handleExportConversation(log)}
+                    onToggleStar={handleToggleStar}
+                    onUpdateTags={handleUpdateTags} onUpdateNote={handleUpdateNote}
+                    availableTags={availableTags} />
                 ))}
               </tbody>
             </table>
@@ -249,19 +331,29 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
   );
 };
 
-function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExportConversation }: {
+function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExportConversation, onToggleStar, onUpdateTags, onUpdateNote, availableTags }: {
   log: LogEntry;
   expanded: boolean;
   onToggle: () => void;
   parseMessages: (s: string) => { role: string; content: unknown }[];
   parseToolCalls: (s: string | null) => unknown[];
   onExportConversation: () => void;
+  onToggleStar: (log: LogEntry, e: React.MouseEvent) => void;
+  onUpdateTags: (logId: number, tags: string) => void;
+  onUpdateNote: (logId: number, note: string) => void;
+  availableTags: string[];
 }) {
   return (
     <>
       <tr onClick={onToggle}
         className="border-b border-border hover:bg-secondary/30 cursor-pointer transition-colors"
       >
+        <td className="px-2 py-2.5 text-center">
+          <Star
+            className={`h-4 w-4 cursor-pointer transition-colors ${log.is_starred ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground hover:text-yellow-400"}`}
+            onClick={(e) => onToggleStar(log, e)}
+          />
+        </td>
         <td className="px-4 py-2.5 text-xs text-muted-foreground font-mono whitespace-nowrap">
           {new Date(log.timestamp).toLocaleString()}
         </td>
@@ -288,15 +380,22 @@ function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExpo
             {log.status_code || "—"}
           </span>
         </td>
-        <td className="px-4 py-2.5 text-xs font-mono text-muted-foreground">
-          {log.api_key_hint?.slice(-8) || "—"}
+        <td className="px-4 py-2.5">
+          <div className="flex flex-wrap gap-1">
+            {log.tags && log.tags.split(",").filter(Boolean).map(t => (
+              <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>
+            ))}
+            {log.note && <StickyNote className="h-3 w-3 text-yellow-500/70" />}
+          </div>
         </td>
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={7} className="bg-secondary/20 px-4 py-4">
+          <td colSpan={8} className="bg-secondary/20 px-4 py-4">
             <LogDetail log={log} parseMessages={parseMessages} parseToolCalls={parseToolCalls}
-              onExportConversation={onExportConversation} />
+              onExportConversation={onExportConversation}
+              onUpdateTags={onUpdateTags} onUpdateNote={onUpdateNote}
+              availableTags={availableTags} />
           </td>
         </tr>
       )}
@@ -326,15 +425,132 @@ function MessageContent({ content }: { content: unknown }) {
   return <span>{String(content)}</span>;
 }
 
-function isHtmlContent(text: string): boolean {
-  return text.trim().startsWith("<");
+function TagEditor({ log, onUpdateTags, availableTags }: {
+  log: LogEntry;
+  onUpdateTags: (logId: number, tags: string) => void;
+  availableTags: string[];
+}) {
+  const currentTags = log.tags ? log.tags.split(",").filter(Boolean) : [];
+  const [newTag, setNewTag] = useState("");
+  const [showInput, setShowInput] = useState(false);
+
+  const addTag = (tag: string) => {
+    const t = tag.trim();
+    if (!t || currentTags.includes(t)) return;
+    onUpdateTags(log.id, [...currentTags, t].join(","));
+    setNewTag("");
+    setShowInput(false);
+  };
+
+  const removeTag = (tag: string) => {
+    onUpdateTags(log.id, currentTags.filter(t => t !== tag).join(","));
+  };
+
+  const unusedTags = availableTags.filter(t => !currentTags.includes(t));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+        {currentTags.map(t => (
+          <Badge key={t} variant="secondary" className="gap-1 text-xs">
+            {t}
+            <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => removeTag(t)} />
+          </Badge>
+        ))}
+        {showInput ? (
+          <div className="flex items-center gap-1">
+            <Input
+              value={newTag}
+              onChange={(e) => setNewTag(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addTag(newTag)}
+              placeholder="输入标签..."
+              className="h-6 w-24 text-xs bg-secondary border-border"
+              autoFocus
+            />
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => addTag(newTag)}>
+              <Check className="h-3 w-3" />
+            </Button>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowInput(false)}>
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        ) : (
+          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground" onClick={() => setShowInput(true)}>
+            <Plus className="h-3 w-3" />
+          </Button>
+        )}
+      </div>
+      {showInput && unusedTags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {unusedTags.map(t => (
+            <Badge key={t} variant="outline"
+              className="text-[10px] cursor-pointer hover:bg-secondary"
+              onClick={() => addTag(t)}
+            >{t}</Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
-function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }: {
+function NoteEditor({ log, onUpdateNote }: {
+  log: LogEntry;
+  onUpdateNote: (logId: number, note: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(log.note || "");
+
+  const save = () => {
+    onUpdateNote(log.id, draft);
+    setEditing(false);
+  };
+
+  if (!editing && !log.note) {
+    return (
+      <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" onClick={() => setEditing(true)}>
+        <StickyNote className="h-3.5 w-3.5" /> 添加备注
+      </Button>
+    );
+  }
+
+  if (editing) {
+    return (
+      <div className="space-y-2">
+        <Textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="记录一下这条 Prompt 好在哪，或从哪个场景抓到的..."
+          className="min-h-[60px] text-sm bg-secondary border-border"
+          autoFocus
+        />
+        <div className="flex gap-2">
+          <Button size="sm" onClick={save} className="text-xs">保存</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(log.note || ""); }} className="text-xs">取消</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg bg-yellow-500/5 border border-yellow-500/20 px-3 py-2 space-y-1 cursor-pointer" onClick={() => setEditing(true)}>
+      <div className="flex items-center gap-1.5 text-xs text-yellow-500/70 font-medium">
+        <StickyNote className="h-3 w-3" /> 备注
+      </div>
+      <p className="text-sm text-foreground/80 whitespace-pre-wrap">{log.note}</p>
+    </div>
+  );
+}
+
+function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, onUpdateTags, onUpdateNote, availableTags }: {
   log: LogEntry;
   parseMessages: (s: string) => { role: string; content: unknown }[];
   parseToolCalls: (s: string | null) => unknown[];
   onExportConversation: () => void;
+  onUpdateTags: (logId: number, tags: string) => void;
+  onUpdateNote: (logId: number, note: string) => void;
+  availableTags: string[];
 }) {
   const messages = log.messages ? parseMessages(log.messages) : [];
   const systemMessages = messages.filter((m) => m.role === "system");
@@ -346,7 +562,25 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
     try {
       const formatted = JSON.stringify(messages, null, 2);
       navigator.clipboard.writeText(formatted);
-      toast({ title: "已复制上下文到剪贴板" });
+      toast({ title: "已复制完整上下文到剪贴板" });
+    } catch {
+      toast({ title: "复制失败", variant: "destructive" });
+    }
+  };
+
+  const handleCopyPrompt = () => {
+    try {
+      const promptParts: string[] = [];
+      for (const msg of messages) {
+        const content = typeof msg.content === "string"
+          ? msg.content
+          : Array.isArray(msg.content)
+            ? msg.content.filter((c: { type: string }) => c.type === "text").map((c: { text?: string }) => c.text).join("\n")
+            : String(msg.content);
+        promptParts.push(`[${msg.role}]\n${content}`);
+      }
+      navigator.clipboard.writeText(promptParts.join("\n\n"));
+      toast({ title: "已复制 Prompt 到剪贴板" });
     } catch {
       toast({ title: "复制失败", variant: "destructive" });
     }
@@ -358,13 +592,22 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
     <div className="space-y-3 max-w-3xl">
       {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">
+        <Button variant="outline" size="sm" onClick={handleCopyPrompt}>
+          <Copy className="h-3.5 w-3.5 mr-1" /> 复制 Prompt
+        </Button>
         <Button variant="outline" size="sm" onClick={handleCopyContext}>
-          <Copy className="h-3.5 w-3.5 mr-1" /> 复制上下文
+          <Copy className="h-3.5 w-3.5 mr-1" /> 复制 JSON
         </Button>
         <Button variant="outline" size="sm" onClick={onExportConversation}>
-          <FileDown className="h-3.5 w-3.5 mr-1" /> 导出当前对话
+          <FileDown className="h-3.5 w-3.5 mr-1" /> 导出对话
         </Button>
       </div>
+
+      {/* Tags */}
+      <TagEditor log={log} onUpdateTags={onUpdateTags} availableTags={availableTags} />
+
+      {/* Note */}
+      <NoteEditor log={log} onUpdateNote={onUpdateNote} />
 
       {/* Error alert box for non-200 */}
       {hasError && (
@@ -376,7 +619,6 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation }:
           {log.error_message && (
             <>
               <p className="text-sm text-destructive/80">{log.error_message}</p>
-              {/* If original error was HTML, show collapsible raw view */}
               {log.error_message.length < 200 && (
                 <Collapsible open={showRawError} onOpenChange={setShowRawError}>
                   <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
