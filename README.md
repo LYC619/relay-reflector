@@ -221,11 +221,18 @@ UPSTREAM_URL=http://127.0.0.1:3000 ADMIN_PASSWORD=你的密码 python main.py
 | `DB_PATH` | SQLite 数据库文件路径 | `/data/proxy.db` |
 | `APP_VERSION` | 设置页面显示的版本号 | `1.0.0` |
 
+### 💡 使用场景
+
+> **最简单的用法**：你平时用 `api.provider.com` 调用 AI，想记录某次对话时，把客户端里的 API 地址改成 `api-log.yourdomain.com`，其他什么都不用改（API Key、模型、参数全部照旧）。记录完切回去就行。
+
 ### 📖 使用说明
 
 1. **添加上游** — 进入「上游管理」添加你的 API 服务商端点
 2. **查看日志** — 所有代理的聊天补全请求都会记录在「请求日志」中
-3. **客户端配置** — 在 Cherry Studio、ChatBox 等 AI 客户端中，将 API 地址设为 `http://你的服务器:7891`，使用你原有的 API Key 即可
+3. **收藏与标签** — 给感兴趣的 Prompt 加星标、打标签，方便分类检索
+4. **添加备注** — 记录这条 Prompt 好在哪，或从哪个场景抓到的
+5. **一键复制** — 复制完整 Prompt 到剪贴板，方便粘贴复用
+6. **客户端配置** — 在 Cherry Studio、ChatBox 等 AI 客户端中，将 API 地址设为 `http://你的服务器:7891`，使用你原有的 API Key 即可
 
 ### ⚠️ 注意事项
 
