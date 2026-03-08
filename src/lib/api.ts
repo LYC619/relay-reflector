@@ -72,6 +72,8 @@ export async function fetchLogs(params: {
   status_code?: number;
   upstream_name?: string;
   keyword?: string;
+  starred?: boolean;
+  tag?: string;
   page?: number;
 }) {
   const qs = new URLSearchParams();
@@ -81,6 +83,8 @@ export async function fetchLogs(params: {
   if (params.status_code) qs.set("status_code", String(params.status_code));
   if (params.upstream_name) qs.set("upstream_name", params.upstream_name);
   if (params.keyword) qs.set("keyword", params.keyword);
+  if (params.starred) qs.set("starred", "true");
+  if (params.tag) qs.set("tag", params.tag);
   if (params.page) qs.set("page", String(params.page));
   return apiFetch(`/admin/api/logs?${qs.toString()}`) as Promise<{
     logs: LogEntry[];
