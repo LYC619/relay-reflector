@@ -2,33 +2,20 @@ import { useState, useEffect } from "react";
 import { fetchLogs, LogEntry, toggleLogStar, updateLogTags, updateLogNote, fetchTags } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import {
   ChevronLeft, ChevronRight, Clock, Cpu, MessageSquare,
-  Star, Tag, StickyNote, X, Plus, Check, Copy, FileDown,
+  Star, StickyNote, Copy, FileDown,
   ChevronDown, Brain, Wrench, AlertTriangle, Search
 } from "lucide-react";
 import {
   Collapsible, CollapsibleContent, CollapsibleTrigger
 } from "@/components/ui/collapsible";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue
-} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
-const PRESET_TAGS = ["写作类", "代码类", "角色扮演", "翻译", "分析", "创意"];
-
-function statusColorClass(code: number | null | undefined): string {
-  if (!code) return "bg-muted text-muted-foreground";
-  if (code >= 200 && code < 300) return "bg-emerald-500/20 text-emerald-400";
-  if (code >= 400 && code < 500) return "bg-amber-500/20 text-amber-400";
-  if (code >= 500) return "bg-destructive/20 text-destructive";
-  return "bg-muted text-muted-foreground";
-}
+import { statusColorClass, PRESET_TAGS, MessageContent, TagEditor, NoteEditor } from "@/components/log-shared";
 
 const FavoritesPage = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -127,16 +114,6 @@ const FavoritesPage = () => {
   };
 
   const availableTags = [...new Set([...allTags, ...PRESET_TAGS])].sort();
-
-  // Group by tag for overview
-  const tagGroups = new Map<string, LogEntry[]>();
-  logs.forEach(log => {
-    const tags = log.tags ? log.tags.split(",").filter(Boolean) : ["未分类"];
-    tags.forEach(t => {
-      if (!tagGroups.has(t)) tagGroups.set(t, []);
-      tagGroups.get(t)!.push(log);
-    });
-  });
 
   return (
     <div className="space-y-4">
@@ -238,7 +215,6 @@ function FavoriteCard({ log, expanded, onToggle, onUnstar, onUpdateTags, onUpdat
   isMobile: boolean;
 }) {
   const messages = log.messages ? parseMessages(log.messages) : [];
-  // Get first user message as preview
   const firstUser = messages.find((m: { role: string }) => m.role === "user");
   const previewText = firstUser
     ? (typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content))
@@ -268,7 +244,6 @@ function FavoriteCard({ log, expanded, onToggle, onUnstar, onUpdateTags, onUpdat
                 {log.total_tokens || 0} tokens · {log.duration_ms}ms
               </span>
             </div>
-            {/* Preview of first user message */}
             <p className="text-sm text-foreground/80 line-clamp-2">{previewText || "（无用户消息）"}</p>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground">
@@ -308,123 +283,6 @@ function FavoriteCard({ log, expanded, onToggle, onUnstar, onUpdateTags, onUpdat
           />
         </div>
       )}
-    </div>
-  );
-}
-
-function MessageContent({ content }: { content: unknown }) {
-  if (typeof content === "string") return <span>{content}</span>;
-  if (Array.isArray(content)) {
-    return (
-      <div className="space-y-2">
-        {content.map((item: { type: string; text?: string; image_url?: { url: string } }, i: number) => {
-          if (item.type === "text") return <span key={i}>{item.text}</span>;
-          if (item.type === "image_url" && item.image_url?.url) {
-            return (
-              <a key={i} href={item.image_url.url} target="_blank" rel="noopener noreferrer">
-                <img src={item.image_url.url} alt="image" className="max-w-[120px] max-h-[80px] rounded border border-border object-cover inline-block" />
-              </a>
-            );
-          }
-          return <span key={i}>[{item.type}]</span>;
-        })}
-      </div>
-    );
-  }
-  return <span>{String(content)}</span>;
-}
-
-function TagEditor({ log, onUpdateTags, availableTags }: {
-  log: LogEntry;
-  onUpdateTags: (logId: number, tags: string) => void;
-  availableTags: string[];
-}) {
-  const currentTags = log.tags ? log.tags.split(",").filter(Boolean) : [];
-  const [newTag, setNewTag] = useState("");
-  const [showInput, setShowInput] = useState(false);
-
-  const addTag = (tag: string) => {
-    const t = tag.trim();
-    if (!t || currentTags.includes(t)) return;
-    onUpdateTags(log.id, [...currentTags, t].join(","));
-    setNewTag("");
-    setShowInput(false);
-  };
-
-  const removeTag = (tag: string) => {
-    onUpdateTags(log.id, currentTags.filter(t => t !== tag).join(","));
-  };
-
-  const unusedTags = availableTags.filter(t => !currentTags.includes(t));
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-        {currentTags.map(t => (
-          <Badge key={t} variant="secondary" className="gap-1 text-xs">
-            {t}
-            <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => removeTag(t)} />
-          </Badge>
-        ))}
-        {showInput ? (
-          <div className="flex items-center gap-1">
-            <Input value={newTag} onChange={(e) => setNewTag(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && addTag(newTag)}
-              placeholder="输入标签..." className="h-6 w-24 text-xs bg-secondary border-border" autoFocus />
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => addTag(newTag)}>
-              <Check className="h-3 w-3" />
-            </Button>
-            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowInput(false)}>
-              <X className="h-3 w-3" />
-            </Button>
-          </div>
-        ) : (
-          <Button variant="ghost" size="sm" className="h-6 px-1.5 text-xs text-muted-foreground" onClick={() => setShowInput(true)}>
-            <Plus className="h-3 w-3" />
-          </Button>
-        )}
-      </div>
-      {showInput && unusedTags.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {unusedTags.map(t => (
-            <Badge key={t} variant="outline" className="text-[10px] cursor-pointer hover:bg-secondary" onClick={() => addTag(t)}>{t}</Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NoteEditor({ log, onUpdateNote }: { log: LogEntry; onUpdateNote: (logId: number, note: string) => void }) {
-  const [note, setNote] = useState(log.note || "");
-  const [editing, setEditing] = useState(false);
-
-  if (!editing) {
-    return (
-      <div className="flex items-start gap-2">
-        <StickyNote className="h-3.5 w-3.5 text-muted-foreground mt-0.5" />
-        {log.note ? (
-          <p className="text-xs text-muted-foreground flex-1 cursor-pointer hover:text-foreground" onClick={() => setEditing(true)}>
-            {log.note}
-          </p>
-        ) : (
-          <Button variant="ghost" size="sm" className="h-6 text-xs text-muted-foreground" onClick={() => setEditing(true)}>
-            添加备注...
-          </Button>
-        )}
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-1.5">
-      <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="记录这条 Prompt 的亮点..."
-        className="text-xs bg-secondary border-border min-h-[60px]" autoFocus />
-      <div className="flex gap-1.5">
-        <Button size="sm" className="h-6 text-xs" onClick={() => { onUpdateNote(log.id, note); setEditing(false); }}>保存</Button>
-        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => { setNote(log.note || ""); setEditing(false); }}>取消</Button>
-      </div>
     </div>
   );
 }

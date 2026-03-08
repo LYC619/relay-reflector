@@ -402,7 +402,6 @@ async def clear_all_logs():
     async with _write_lock:
         db = await get_db()
         await db.execute("DELETE FROM logs")
-        await db.execute("VACUUM")
         await db.commit()
 
 

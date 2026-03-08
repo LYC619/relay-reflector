@@ -13,6 +13,13 @@ interface DashboardPageProps {
   onNavigateToLog?: (logId: number) => void;
 }
 
+const chartGridStroke = "hsl(var(--border))";
+const chartTickFill = "hsl(var(--muted-foreground))";
+const chartTooltipStyle = {
+  background: "hsl(var(--card))",
+  border: "1px solid hsl(var(--border))",
+};
+
 const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,11 +72,11 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={stats.hourly}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,15%,18%)" />
-                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }}
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: chartTickFill }}
                   tickFormatter={(v) => v.slice(11, 16)} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }} />
-                <Tooltip contentStyle={{ background: "hsl(220,18%,10%)", border: "1px solid hsl(220,15%,18%)" }} />
+                <YAxis tick={{ fontSize: 10, fill: chartTickFill }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
                 <Line type="monotone" dataKey="count" stroke="hsl(160,70%,45%)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -81,11 +88,11 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={stats.hourly}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,15%,18%)" />
-                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }}
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="hour" tick={{ fontSize: 10, fill: chartTickFill }}
                   tickFormatter={(v) => v.slice(11, 16)} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }} />
-                <Tooltip contentStyle={{ background: "hsl(220,18%,10%)", border: "1px solid hsl(220,15%,18%)" }} />
+                <YAxis tick={{ fontSize: 10, fill: chartTickFill }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
                 <Line type="monotone" dataKey="tokens" stroke="hsl(200,60%,50%)" strokeWidth={2} dot={false} />
               </LineChart>
             </ResponsiveContainer>
@@ -101,11 +108,11 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={stats.daily_7d}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(220,15%,18%)" />
-                <XAxis dataKey="day" tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }}
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGridStroke} />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: chartTickFill }}
                   tickFormatter={(v) => v.slice(5)} />
-                <YAxis tick={{ fontSize: 10, fill: "hsl(215,15%,50%)" }} />
-                <Tooltip contentStyle={{ background: "hsl(220,18%,10%)", border: "1px solid hsl(220,15%,18%)" }} />
+                <YAxis tick={{ fontSize: 10, fill: chartTickFill }} />
+                <Tooltip contentStyle={chartTooltipStyle} />
                 <Bar dataKey="count" fill="hsl(160,70%,45%)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -130,7 +137,7 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
                       <Cell key={i} fill={COLORS[i % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip contentStyle={{ background: "hsl(220,18%,10%)", border: "1px solid hsl(220,15%,18%)" }} />
+                  <Tooltip contentStyle={chartTooltipStyle} />
                 </PieChart>
               </ResponsiveContainer>
             )}
