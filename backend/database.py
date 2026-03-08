@@ -88,7 +88,8 @@ async def init_db():
     """)
     # Migrate: add new columns if missing
     for col in ["thinking_content TEXT", "tool_calls TEXT", "upstream_name TEXT",
-                "status_code INTEGER", "error_message TEXT"]:
+                "status_code INTEGER", "error_message TEXT",
+                "is_starred INTEGER DEFAULT 0", "tags TEXT DEFAULT ''", "note TEXT DEFAULT ''"]:
         try:
             await db.execute(f"ALTER TABLE logs ADD COLUMN {col}")
         except Exception:
