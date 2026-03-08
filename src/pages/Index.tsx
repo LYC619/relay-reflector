@@ -49,6 +49,7 @@ const Index = () => {
     switch (tab) {
       case "dashboard": return <DashboardPage onNavigateToLog={navigateToLog} />;
       case "logs": return <LogsPage initialExpandId={expandLogId} onConsumeExpandId={() => setExpandLogId(null)} />;
+      case "favorites": return <FavoritesPage />;
       case "upstreams": return <UpstreamsPage />;
       case "keys": return <KeysPage />;
       case "settings": return <SettingsPage />;
