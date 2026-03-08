@@ -161,6 +161,11 @@ async def get_logs(model=None, start_time=None, end_time=None, status_code=None,
     if keyword:
         conditions.append("(messages LIKE ? OR assistant_reply LIKE ?)")
         params.extend([f"%{keyword}%", f"%{keyword}%"])
+    if starred_only:
+        conditions.append("is_starred = 1")
+    if tag:
+        conditions.append("(',' || tags || ',' LIKE ?)")
+        params.append(f"%,{tag},%")
 
     where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
