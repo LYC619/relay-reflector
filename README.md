@@ -45,6 +45,8 @@ docker run -d \
   ghcr.io/lyc619/api-log:latest
 ```
 
+> **Note**: `--network host` lets the container access upstream services on localhost. For cloud deployments, use `-p 7891:7891` instead.
+
 #### Docker Compose
 
 ```yaml
