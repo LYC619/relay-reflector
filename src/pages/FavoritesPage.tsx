@@ -16,6 +16,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { statusColorClass, PRESET_TAGS, MessageContent, TagEditor, NoteEditor } from "@/components/log-shared";
+import { useI18n } from "@/lib/i18n";
 
 const FavoritesPage = () => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -28,6 +29,7 @@ const FavoritesPage = () => {
   const [loading, setLoading] = useState(false);
   const [allTags, setAllTags] = useState<string[]>([]);
   const isMobile = useIsMobile();
+  const { t } = useI18n();
 
   const loadLogs = async () => {
     setLoading(true);
@@ -75,8 +77,8 @@ const FavoritesPage = () => {
       await toggleLogStar(log.id, false);
       setLogs(prev => prev.filter(l => l.id !== log.id));
       setTotal(prev => prev - 1);
-      toast({ title: "已取消收藏" });
-    } catch { toast({ title: "操作失败", variant: "destructive" }); }
+      toast({ title: t("fav.unstarred") });
+    } catch { toast({ title: t("logs.operation_failed"), variant: "destructive" }); }
   };
 
   const handleUpdateTags = async (logId: number, tags: string) => {
@@ -84,15 +86,15 @@ const FavoritesPage = () => {
       await updateLogTags(logId, tags);
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, tags } : l));
       loadTags();
-    } catch { toast({ title: "更新失败", variant: "destructive" }); }
+    } catch { toast({ title: t("logs.update_failed"), variant: "destructive" }); }
   };
 
   const handleUpdateNote = async (logId: number, note: string) => {
     try {
       await updateLogNote(logId, note);
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, note } : l));
-      toast({ title: "备注已保存" });
-    } catch { toast({ title: "保存失败", variant: "destructive" }); }
+      toast({ title: t("logs.note_saved") });
+    } catch { toast({ title: t("logs.save_failed"), variant: "destructive" }); }
   };
 
   const handleExportConversation = (log: LogEntry) => {
@@ -120,48 +122,47 @@ const FavoritesPage = () => {
       <div className="flex items-center justify-between flex-wrap gap-2">
         <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-          Prompt 收藏夹
+          {t("fav.title")}
         </h2>
-        <span className="text-sm text-muted-foreground">共 {total} 条收藏</span>
+        <span className="text-sm text-muted-foreground">{t("fav.total", { count: total })}</span>
       </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 rounded-lg border border-border bg-card p-3">
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <Input placeholder="搜索收藏..." value={keyword} onChange={(e) => setKeyword(e.target.value)}
+          <Input placeholder={t("fav.search_placeholder")} value={keyword} onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && loadLogs()}
             className="w-48 bg-secondary border-border" />
         </div>
-        {/* Tag filter chips */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <Badge
             variant={tagFilter === "" ? "default" : "outline"}
             className="cursor-pointer text-xs"
             onClick={() => { setTagFilter(""); setPage(1); }}
-          >全部</Badge>
-          {allTags.map(t => (
+          >{t("fav.all")}</Badge>
+          {allTags.map(tVal => (
             <Badge
-              key={t}
-              variant={tagFilter === t ? "default" : "outline"}
+              key={tVal}
+              variant={tagFilter === tVal ? "default" : "outline"}
               className="cursor-pointer text-xs"
-              onClick={() => { setTagFilter(t); setPage(1); }}
-            >{t}</Badge>
+              onClick={() => { setTagFilter(tVal); setPage(1); }}
+            >{tVal}</Badge>
           ))}
         </div>
-        <Button size="sm" onClick={() => { setPage(1); loadLogs(); }}>搜索</Button>
+        <Button size="sm" onClick={() => { setPage(1); loadLogs(); }}>{t("fav.search")}</Button>
       </div>
 
       {/* Empty state */}
       {!loading && logs.length === 0 && (
         <div className="text-center py-16 space-y-3">
           <Star className="h-12 w-12 text-muted-foreground/30 mx-auto" />
-          <p className="text-muted-foreground">还没有收藏的 Prompt</p>
-          <p className="text-xs text-muted-foreground/70">在请求日志中点击 ⭐ 收藏感兴趣的对话</p>
+          <p className="text-muted-foreground">{t("fav.empty_title")}</p>
+          <p className="text-xs text-muted-foreground/70">{t("fav.empty_hint")}</p>
         </div>
       )}
 
-      {loading && <p className="text-center py-8 text-muted-foreground">加载中...</p>}
+      {loading && <p className="text-center py-8 text-muted-foreground">{t("common.loading")}</p>}
 
       {/* Cards layout */}
       {!loading && logs.length > 0 && (
@@ -219,13 +220,14 @@ function FavoriteCard({ log, expanded, onToggle, onUnstar, onUpdateTags, onUpdat
   const previewText = firstUser
     ? (typeof firstUser.content === "string" ? firstUser.content : JSON.stringify(firstUser.content))
     : "";
+  const { t } = useI18n();
 
   const handleCopyPrompt = () => {
     const parts = messages.map((m: { role: string; content: unknown }) =>
       `[${m.role}]\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`
     ).join("\n\n");
     navigator.clipboard.writeText(parts);
-    toast({ title: "已复制 Prompt" });
+    toast({ title: t("fav.copied_prompt") });
   };
 
   return (
@@ -244,17 +246,17 @@ function FavoriteCard({ log, expanded, onToggle, onUnstar, onUpdateTags, onUpdat
                 {log.total_tokens || 0} tokens · {log.duration_ms}ms
               </span>
             </div>
-            <p className="text-sm text-foreground/80 line-clamp-2">{previewText || "（无用户消息）"}</p>
+            <p className="text-sm text-foreground/80 line-clamp-2">{previewText || t("fav.no_user_msg")}</p>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-muted-foreground">
                 {new Date(log.timestamp).toLocaleString()}
               </span>
-              {log.tags && log.tags.split(",").filter(Boolean).map(t => (
-                <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>
+              {log.tags && log.tags.split(",").filter(Boolean).map(tVal => (
+                <Badge key={tVal} variant="secondary" className="text-[10px] px-1.5 py-0">{tVal}</Badge>
               ))}
               {log.note && (
                 <span className="text-xs text-muted-foreground/70 flex items-center gap-0.5">
-                  <StickyNote className="h-3 w-3" /> 有备注
+                  <StickyNote className="h-3 w-3" /> {t("fav.has_note")}
                 </span>
               )}
             </div>
@@ -298,18 +300,19 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
 }) {
   const messages = log.messages ? parseMessages(log.messages) : [];
   const toolCalls = parseToolCalls(log.tool_calls);
+  const { t } = useI18n();
 
   const handleCopyPrompt = () => {
     const parts = messages.map((m: { role: string; content: unknown }) =>
       `[${m.role}]\n${typeof m.content === "string" ? m.content : JSON.stringify(m.content)}`
     ).join("\n\n");
     navigator.clipboard.writeText(parts);
-    toast({ title: "已复制 Prompt" });
+    toast({ title: t("fav.copied_prompt") });
   };
 
   const handleCopyJson = () => {
     navigator.clipboard.writeText(log.messages || "");
-    toast({ title: "已复制 JSON" });
+    toast({ title: t("fav.copied_json") });
   };
 
   return (
@@ -324,8 +327,8 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
       <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
         <span>Key: {log.api_key_hint || "—"}</span>
         <span>IP: {log.client_ip}</span>
-        <span>路径: {log.method} {log.path}</span>
-        {log.upstream_name && <span>上游: {log.upstream_name}</span>}
+        <span>{t("fav.path")}: {log.method} {log.path}</span>
+        {log.upstream_name && <span>{t("fav.upstream")}: {log.upstream_name}</span>}
         {log.prompt_tokens != null && <span>Prompt: {log.prompt_tokens} tok</span>}
         {log.completion_tokens != null && <span>Completion: {log.completion_tokens} tok</span>}
       </div>
@@ -333,13 +336,13 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
       {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleCopyPrompt}>
-          <Copy className="h-3 w-3" /> 复制 Prompt
+          <Copy className="h-3 w-3" /> {t("logs.copy_prompt")}
         </Button>
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={handleCopyJson}>
-          <Copy className="h-3 w-3" /> 复制 JSON
+          <Copy className="h-3 w-3" /> {t("logs.copy_json")}
         </Button>
         <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={onExportConversation}>
-          <FileDown className="h-3 w-3" /> 导出对话
+          <FileDown className="h-3 w-3" /> {t("logs.export_conv")}
         </Button>
       </div>
 
@@ -353,7 +356,7 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
 
       {/* Messages */}
       <div className="space-y-2">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">对话内容</h4>
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{t("fav.conversation")}</h4>
         {messages.map((msg: { role: string; content: unknown }, i: number) => (
           <div key={i} className={`rounded p-3 text-xs ${
             msg.role === "system" ? "bg-accent/30 border border-accent/50" :
@@ -372,7 +375,7 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
       {log.assistant_reply && (
         <Collapsible>
           <CollapsibleTrigger className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
-            <ChevronDown className="h-3.5 w-3.5" /> 助手回复
+            <ChevronDown className="h-3.5 w-3.5" /> {t("fav.assistant_reply")}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 rounded bg-secondary border border-border p-3 text-xs whitespace-pre-wrap break-words text-foreground/80">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{log.assistant_reply}</ReactMarkdown>
@@ -384,7 +387,7 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
       {log.thinking_content && (
         <Collapsible>
           <CollapsibleTrigger className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
-            <Brain className="h-3.5 w-3.5" /> 思考过程
+            <Brain className="h-3.5 w-3.5" /> {t("fav.thinking")}
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 rounded bg-accent/20 border border-accent/30 p-3 text-xs whitespace-pre-wrap break-words text-foreground/70">
             {log.thinking_content}
@@ -396,7 +399,7 @@ function FavoriteDetail({ log, parseMessages, parseToolCalls, onExportConversati
       {toolCalls.length > 0 && (
         <Collapsible>
           <CollapsibleTrigger className="flex items-center gap-1 text-xs font-semibold text-muted-foreground hover:text-foreground">
-            <Wrench className="h-3.5 w-3.5" /> 工具调用 ({toolCalls.length})
+            <Wrench className="h-3.5 w-3.5" /> {t("fav.tool_calls")} ({toolCalls.length})
           </CollapsibleTrigger>
           <CollapsibleContent className="mt-2 rounded bg-secondary border border-border p-3 text-xs">
             <pre className="whitespace-pre-wrap break-words text-foreground/70">{JSON.stringify(toolCalls, null, 2)}</pre>

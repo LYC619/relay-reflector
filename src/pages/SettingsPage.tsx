@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Settings, Save, Trash2, Database, Lock, CheckCircle, Download, Info } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 
 const SettingsPage = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -19,6 +20,7 @@ const SettingsPage = () => {
   const [logOnlyErrors, setLogOnlyErrors] = useState(false);
   const [retentionDays, setRetentionDays] = useState(0);
   const [newPassword, setNewPassword] = useState("");
+  const { t, lang } = useI18n();
 
   useEffect(() => {
     fetchSettings().then((s) => {
@@ -32,19 +34,19 @@ const SettingsPage = () => {
 
   const handleSaveSettings = async () => {
     await updateSettings({ log_enabled: logEnabled, log_retention_days: retentionDays, log_only_errors: logOnlyErrors });
-    toast({ title: "设置已保存" });
+    toast({ title: t("set.saved") });
   };
 
   const handleChangePassword = async () => {
     if (!newPassword) return;
     await changePassword(newPassword);
     setNewPassword("");
-    toast({ title: "密码已修改" });
+    toast({ title: t("set.password_changed") });
   };
 
   const handleClearLogs = async () => {
     await clearAllLogs();
-    toast({ title: "日志已清空" });
+    toast({ title: t("set.logs_cleared") });
   };
 
   const handleBackup = async () => {
@@ -56,9 +58,9 @@ const SettingsPage = () => {
       a.download = `proxy_backup_${new Date().toISOString().slice(0, 10)}.db`;
       a.click();
       URL.revokeObjectURL(url);
-      toast({ title: "备份下载已开始" });
+      toast({ title: t("set.backup_started") });
     } catch {
-      toast({ title: "备份失败", variant: "destructive" });
+      toast({ title: t("set.backup_failed"), variant: "destructive" });
     }
   };
 
@@ -72,28 +74,28 @@ const SettingsPage = () => {
     const d = Math.floor(seconds / 86400);
     const h = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    if (d > 0) return `${d}天 ${h}小时`;
-    if (h > 0) return `${h}小时 ${m}分钟`;
-    return `${m}分钟`;
+    if (d > 0) return `${d}${t("time.days")} ${h}${t("time.hours")}`;
+    if (h > 0) return `${h}${t("time.hours")} ${m}${t("time.minutes")}`;
+    return `${m}${t("time.minutes")}`;
   };
 
-  if (loading) return <p className="text-muted-foreground text-center py-12">加载中...</p>;
+  if (loading) return <p className="text-muted-foreground text-center py-12">{t("common.loading")}</p>;
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <h2 className="text-2xl font-bold text-foreground">系统设置</h2>
+      <h2 className="text-2xl font-bold text-foreground">{t("set.title")}</h2>
 
       {/* Version & uptime */}
       {settings && (
         <Card>
-          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" /> 系统信息</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4" /> {t("set.sys_info")}</CardTitle></CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">版本</span>
+              <span className="text-sm text-muted-foreground">{t("set.version")}</span>
               <span className="text-sm font-mono">API Log v{settings.version}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">运行时长</span>
+              <span className="text-sm text-muted-foreground">{t("set.uptime")}</span>
               <span className="text-sm font-mono">{formatUptime(settings.uptime_seconds)}</span>
             </div>
           </CardContent>
@@ -102,65 +104,65 @@ const SettingsPage = () => {
 
       {/* Logging settings */}
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Settings className="h-4 w-4" /> 日志设置</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Settings className="h-4 w-4" /> {t("set.log_settings")}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
-            <Label>启用日志记录</Label>
+            <Label>{t("set.log_enabled")}</Label>
             <Switch checked={logEnabled} onCheckedChange={setLogEnabled} />
           </div>
           <div className="flex items-center justify-between">
-            <Label>仅记录失败请求</Label>
+            <Label>{t("set.log_errors_only")}</Label>
             <Switch checked={logOnlyErrors} onCheckedChange={setLogOnlyErrors} />
           </div>
           <div className="space-y-2">
-            <Label>日志保留天数（0 = 永久保留）</Label>
+            <Label>{t("set.log_retention")}</Label>
             <Input type="number" value={retentionDays} onChange={(e) => setRetentionDays(parseInt(e.target.value) || 0)}
               className="w-32 bg-secondary" />
           </div>
           <Button onClick={handleSaveSettings} size="sm">
-            <Save className="h-4 w-4 mr-1" /> 保存
+            <Save className="h-4 w-4 mr-1" /> {t("set.save")}
           </Button>
         </CardContent>
       </Card>
 
       {/* Password */}
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Lock className="h-4 w-4" /> 修改密码</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Lock className="h-4 w-4" /> {t("set.change_password")}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-            placeholder="输入新密码" className="bg-secondary" />
+            placeholder={t("set.new_password")} className="bg-secondary" />
           <Button onClick={handleChangePassword} size="sm" disabled={!newPassword}>
-            <CheckCircle className="h-4 w-4 mr-1" /> 修改密码
+            <CheckCircle className="h-4 w-4 mr-1" /> {t("set.change_password")}
           </Button>
         </CardContent>
       </Card>
 
       {/* Database */}
       <Card>
-        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Database className="h-4 w-4" /> 数据库</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="text-sm flex items-center gap-2"><Database className="h-4 w-4" /> {t("set.database")}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">数据库大小</span>
+            <span className="text-sm text-muted-foreground">{t("set.db_size")}</span>
             <span className="text-sm font-mono">{settings ? formatSize(settings.db_size) : "—"}</span>
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button variant="outline" size="sm" onClick={handleBackup}>
-              <Download className="h-4 w-4 mr-1" /> 备份下载
+              <Download className="h-4 w-4 mr-1" /> {t("set.backup")}
             </Button>
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
-                  <Trash2 className="h-4 w-4 mr-1" /> 清空所有日志
+                  <Trash2 className="h-4 w-4 mr-1" /> {t("set.clear_logs")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>确认清空</AlertDialogTitle>
-                  <AlertDialogDescription>此操作将删除所有请求日志，不可恢复。确定继续？</AlertDialogDescription>
+                  <AlertDialogTitle>{t("set.confirm_clear")}</AlertDialogTitle>
+                  <AlertDialogDescription>{t("set.clear_desc")}</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>取消</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClearLogs}>确认清空</AlertDialogAction>
+                  <AlertDialogCancel>{t("set.cancel")}</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearLogs}>{t("set.confirm")}</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>

@@ -6,6 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, BarChart, Bar
 } from "recharts";
+import { useI18n } from "@/lib/i18n";
 
 const COLORS = ["hsl(160,70%,45%)", "hsl(200,60%,50%)", "hsl(280,60%,55%)", "hsl(30,80%,55%)", "hsl(340,65%,50%)"];
 
@@ -23,6 +24,7 @@ const chartTooltipStyle = {
 const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     fetchDashboard()
@@ -32,21 +34,21 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
   }, []);
 
   if (loading || !stats) {
-    return <p className="text-muted-foreground text-center py-12">加载中...</p>;
+    return <p className="text-muted-foreground text-center py-12">{t("common.loading")}</p>;
   }
 
   const summaryCards = [
-    { title: "今日请求", value: stats.today_requests, icon: Activity, color: "text-primary" },
-    { title: "今日 Token", value: stats.today_tokens.toLocaleString(), icon: Zap, color: "text-accent" },
-    { title: "平均响应", value: `${stats.avg_duration}ms`, icon: Clock, color: "text-foreground" },
-    { title: "错误率", value: `${stats.error_rate}%`, icon: AlertTriangle, color: "text-destructive" },
-    { title: "本月请求", value: stats.month_requests.toLocaleString(), icon: Calendar, color: "text-primary" },
-    { title: "本月 Token", value: stats.month_tokens.toLocaleString(), icon: TrendingUp, color: "text-accent" },
+    { title: t("dash.today_requests"), value: stats.today_requests, icon: Activity, color: "text-primary" },
+    { title: t("dash.today_tokens"), value: stats.today_tokens.toLocaleString(), icon: Zap, color: "text-accent" },
+    { title: t("dash.avg_response"), value: `${stats.avg_duration}ms`, icon: Clock, color: "text-foreground" },
+    { title: t("dash.error_rate"), value: `${stats.error_rate}%`, icon: AlertTriangle, color: "text-destructive" },
+    { title: t("dash.month_requests"), value: stats.month_requests.toLocaleString(), icon: Calendar, color: "text-primary" },
+    { title: t("dash.month_tokens"), value: stats.month_tokens.toLocaleString(), icon: TrendingUp, color: "text-accent" },
   ];
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-foreground">仪表盘</h2>
+      <h2 className="text-2xl font-bold text-foreground">{t("dash.title")}</h2>
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -68,7 +70,7 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
       {/* Charts row 1 */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <Card>
-          <CardHeader><CardTitle className="text-sm">最近 24 小时请求量</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("dash.hourly_requests")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={stats.hourly}>
@@ -84,7 +86,7 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
         </Card>
 
         <Card>
-          <CardHeader><CardTitle className="text-sm">最近 24 小时 Token 消耗</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("dash.hourly_tokens")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
               <LineChart data={stats.hourly}>
@@ -102,9 +104,8 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
 
       {/* Charts row 2 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* 7-day bar chart */}
         <Card>
-          <CardHeader><CardTitle className="text-sm">最近 7 天每日请求量</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("dash.daily_7d")}</CardTitle></CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={stats.daily_7d}>
@@ -119,12 +120,11 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
           </CardContent>
         </Card>
 
-        {/* Top models */}
         <Card>
-          <CardHeader><CardTitle className="text-sm">热门模型 Top 5</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("dash.top_models")}</CardTitle></CardHeader>
           <CardContent>
             {stats.top_models.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">暂无数据</p>
+              <p className="text-muted-foreground text-center py-8">{t("dash.no_data")}</p>
             ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <PieChart>
@@ -144,13 +144,12 @@ const DashboardPage = ({ onNavigateToLog }: DashboardPageProps) => {
           </CardContent>
         </Card>
 
-        {/* Recent requests */}
         <Card>
-          <CardHeader><CardTitle className="text-sm">最近请求</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-sm">{t("dash.recent")}</CardTitle></CardHeader>
           <CardContent className="p-0">
             <div className="divide-y divide-border">
               {stats.recent.length === 0 && (
-                <p className="text-muted-foreground text-center py-8">暂无数据</p>
+                <p className="text-muted-foreground text-center py-8">{t("dash.no_data")}</p>
               )}
               {stats.recent.map((r) => (
                 <div key={r.id}

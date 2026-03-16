@@ -2,7 +2,7 @@ import { useState, lazy, Suspense, useCallback } from "react";
 import { getAdminPassword } from "@/lib/api";
 import LoginPage from "@/pages/LoginPage";
 import {
-  LayoutDashboard, ScrollText, Globe, Key, Settings, LogOut, Activity, Star
+  LayoutDashboard, ScrollText, Globe, Key, Settings, LogOut, Activity, Star, Languages
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
@@ -10,6 +10,7 @@ import {
   SidebarProvider, SidebarTrigger,
 } from "@/components/ui/sidebar";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useI18n, type TransKey } from "@/lib/i18n";
 
 // Lazy load pages for code splitting
 const DashboardPage = lazy(() => import("@/pages/DashboardPage"));
@@ -21,13 +22,13 @@ const SettingsPage = lazy(() => import("@/pages/SettingsPage"));
 
 type Tab = "dashboard" | "logs" | "favorites" | "upstreams" | "keys" | "settings";
 
-const navItems: { id: Tab; title: string; icon: typeof LayoutDashboard }[] = [
-  { id: "dashboard", title: "仪表盘", icon: LayoutDashboard },
-  { id: "logs", title: "请求日志", icon: ScrollText },
-  { id: "favorites", title: "Prompt 收藏", icon: Star },
-  { id: "upstreams", title: "上游管理", icon: Globe },
-  { id: "keys", title: "Key 统计", icon: Key },
-  { id: "settings", title: "系统设置", icon: Settings },
+const navItems: { id: Tab; titleKey: TransKey; icon: typeof LayoutDashboard }[] = [
+  { id: "dashboard", titleKey: "nav.dashboard", icon: LayoutDashboard },
+  { id: "logs", titleKey: "nav.logs", icon: ScrollText },
+  { id: "favorites", titleKey: "nav.favorites", icon: Star },
+  { id: "upstreams", titleKey: "nav.upstreams", icon: Globe },
+  { id: "keys", titleKey: "nav.keys", icon: Key },
+  { id: "settings", titleKey: "nav.settings", icon: Settings },
 ];
 
 const Index = () => {
@@ -35,6 +36,7 @@ const Index = () => {
   const [tab, setTab] = useState<Tab>("dashboard");
   const [expandLogId, setExpandLogId] = useState<number | null>(null);
   const isMobile = useIsMobile();
+  const { t, lang, setLang } = useI18n();
 
   const navigateToLog = useCallback((logId: number) => {
     setExpandLogId(logId);
@@ -79,10 +81,10 @@ const Index = () => {
                       <SidebarMenuButton
                         onClick={() => setTab(item.id)}
                         isActive={tab === item.id}
-                        tooltip={item.title}
+                        tooltip={t(item.titleKey)}
                       >
                         <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
+                        <span>{t(item.titleKey)}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -90,18 +92,29 @@ const Index = () => {
               </SidebarGroupContent>
             </SidebarGroup>
 
-            {/* Logout at bottom */}
-            <div className="mt-auto px-2 py-3 border-t border-sidebar-border">
-              <SidebarMenuButton
-                onClick={() => {
-                  sessionStorage.removeItem("admin_password");
-                  setAuthed(false);
-                }}
-                tooltip="退出登录"
-              >
-                <LogOut className="h-4 w-4" />
-                <span>退出登录</span>
-              </SidebarMenuButton>
+            {/* Language toggle & logout at bottom */}
+            <div className="mt-auto border-t border-sidebar-border">
+              <div className="px-2 py-2">
+                <SidebarMenuButton
+                  onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+                  tooltip={lang === "zh" ? "English" : "中文"}
+                >
+                  <Languages className="h-4 w-4" />
+                  <span>{lang === "zh" ? "English" : "中文"}</span>
+                </SidebarMenuButton>
+              </div>
+              <div className="px-2 pb-3">
+                <SidebarMenuButton
+                  onClick={() => {
+                    sessionStorage.removeItem("admin_password");
+                    setAuthed(false);
+                  }}
+                  tooltip={t("nav.logout")}
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>{t("nav.logout")}</span>
+                </SidebarMenuButton>
+              </div>
             </div>
           </SidebarContent>
         </Sidebar>
@@ -110,11 +123,11 @@ const Index = () => {
           <header className="h-12 flex items-center border-b border-border px-4 bg-card flex-shrink-0">
             <SidebarTrigger className="mr-3" />
             <h1 className="text-sm font-semibold text-foreground">
-              {navItems.find((n) => n.id === tab)?.title}
+              {t(navItems.find((n) => n.id === tab)?.titleKey || "nav.dashboard")}
             </h1>
           </header>
           <main className="flex-1 p-4 sm:p-6 overflow-auto">
-            <Suspense fallback={<p className="text-muted-foreground text-center py-12">加载中...</p>}>
+            <Suspense fallback={<p className="text-muted-foreground text-center py-12">{t("common.loading")}</p>}>
               {renderPage()}
             </Suspense>
           </main>

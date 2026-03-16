@@ -19,6 +19,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { statusColorClass, PRESET_TAGS, MessageContent, TagEditor, NoteEditor } from "@/components/log-shared";
+import { useI18n } from "@/lib/i18n";
 
 interface LogsPageProps {
   initialExpandId?: number | null;
@@ -42,6 +43,7 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
   const [loading, setLoading] = useState(false);
   const [allTags, setAllTags] = useState<string[]>([]);
   const isMobile = useIsMobile();
+  const { t } = useI18n();
 
   const loadLogs = async () => {
     setLoading(true);
@@ -137,7 +139,7 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
     try {
       await toggleLogStar(log.id, newVal);
       setLogs(prev => prev.map(l => l.id === log.id ? { ...l, is_starred: newVal ? 1 : 0 } : l));
-    } catch { toast({ title: "操作失败", variant: "destructive" }); }
+    } catch { toast({ title: t("logs.operation_failed"), variant: "destructive" }); }
   };
 
   const handleUpdateTags = async (logId: number, tags: string) => {
@@ -145,26 +147,25 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
       await updateLogTags(logId, tags);
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, tags } : l));
       loadTags();
-    } catch { toast({ title: "更新失败", variant: "destructive" }); }
+    } catch { toast({ title: t("logs.update_failed"), variant: "destructive" }); }
   };
 
   const handleUpdateNote = async (logId: number, note: string) => {
     try {
       await updateLogNote(logId, note);
       setLogs(prev => prev.map(l => l.id === logId ? { ...l, note } : l));
-      toast({ title: "备注已保存" });
-    } catch { toast({ title: "保存失败", variant: "destructive" }); }
+      toast({ title: t("logs.note_saved") });
+    } catch { toast({ title: t("logs.save_failed"), variant: "destructive" }); }
   };
 
-  // Unique tags from allTags + PRESET_TAGS
   const availableTags = [...new Set([...allTags, ...PRESET_TAGS])].sort();
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h2 className="text-2xl font-bold text-foreground">请求日志</h2>
+        <h2 className="text-2xl font-bold text-foreground">{t("logs.title")}</h2>
         <Button variant="outline" size="sm" onClick={handleExport}>
-          <Download className="h-4 w-4 mr-1" /> 导出筛选结果
+          <Download className="h-4 w-4 mr-1" /> {t("logs.export")}
         </Button>
       </div>
 
@@ -172,10 +173,10 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
       <div className="flex flex-wrap gap-3 rounded-lg border border-border bg-card p-4">
         <div className="flex items-center gap-2">
           <Search className="h-4 w-4 text-muted-foreground" />
-          <Input placeholder="模型名称" value={model} onChange={(e) => setModel(e.target.value)}
+          <Input placeholder={t("logs.model_placeholder")} value={model} onChange={(e) => setModel(e.target.value)}
             className="w-36 bg-secondary border-border" />
         </div>
-        <Input placeholder="全文搜索..." value={keyword} onChange={(e) => setKeyword(e.target.value)}
+        <Input placeholder={t("logs.keyword_placeholder")} value={keyword} onChange={(e) => setKeyword(e.target.value)}
           className="w-40 bg-secondary border-border" />
         {!isMobile && (
           <>
@@ -187,10 +188,10 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
         )}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-28 bg-secondary border-border">
-            <SelectValue placeholder="状态码" />
+            <SelectValue placeholder={t("logs.status_placeholder")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">全部</SelectItem>
+            <SelectItem value="all">{t("logs.status_all")}</SelectItem>
             <SelectItem value="200">200</SelectItem>
             <SelectItem value="400">400</SelectItem>
             <SelectItem value="401">401</SelectItem>
@@ -198,7 +199,7 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
             <SelectItem value="500">500</SelectItem>
           </SelectContent>
         </Select>
-        <Input placeholder="上游" value={upstreamFilter} onChange={(e) => setUpstreamFilter(e.target.value)}
+        <Input placeholder={t("logs.upstream_placeholder")} value={upstreamFilter} onChange={(e) => setUpstreamFilter(e.target.value)}
           className="w-28 bg-secondary border-border" />
         <Button
           variant={starredOnly ? "default" : "outline"}
@@ -206,27 +207,27 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
           onClick={() => { setStarredOnly(!starredOnly); setPage(1); }}
           className="gap-1"
         >
-          <Star className={`h-3.5 w-3.5 ${starredOnly ? "fill-current" : ""}`} /> 收藏
+          <Star className={`h-3.5 w-3.5 ${starredOnly ? "fill-current" : ""}`} /> {t("logs.starred")}
         </Button>
         {allTags.length > 0 && (
           <Select value={tagFilter} onValueChange={(v) => { setTagFilter(v === "all" ? "" : v); setPage(1); }}>
             <SelectTrigger className="w-28 bg-secondary border-border">
-              <SelectValue placeholder="标签" />
+              <SelectValue placeholder={t("logs.tag_placeholder")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部标签</SelectItem>
-              {allTags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+              <SelectItem value="all">{t("logs.tag_all")}</SelectItem>
+              {allTags.map(tVal => <SelectItem key={tVal} value={tVal}>{tVal}</SelectItem>)}
             </SelectContent>
           </Select>
         )}
-        <Button onClick={() => { setPage(1); loadLogs(); }}>筛选</Button>
+        <Button onClick={() => { setPage(1); loadLogs(); }}>{t("logs.filter")}</Button>
       </div>
 
       {/* Table / Cards */}
       {isMobile ? (
         <div className="space-y-3">
-          {loading && <p className="text-center py-8 text-muted-foreground">加载中...</p>}
-          {!loading && logs.length === 0 && <p className="text-center py-8 text-muted-foreground">暂无记录</p>}
+          {loading && <p className="text-center py-8 text-muted-foreground">{t("common.loading")}</p>}
+          {!loading && logs.length === 0 && <p className="text-center py-8 text-muted-foreground">{t("logs.no_records")}</p>}
           {logs.map((log) => (
             <div key={log.id}
               className="rounded-lg border border-border bg-card p-4 space-y-2 cursor-pointer"
@@ -251,8 +252,8 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
               </div>
               {log.tags && (
                 <div className="flex flex-wrap gap-1">
-                  {log.tags.split(",").filter(Boolean).map(t => (
-                    <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>
+                  {log.tags.split(",").filter(Boolean).map(tVal => (
+                    <Badge key={tVal} variant="secondary" className="text-[10px] px-1.5 py-0">{tVal}</Badge>
                   ))}
                 </div>
               )}
@@ -274,21 +275,21 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
               <thead>
                 <tr className="border-b border-border bg-secondary/50">
                   <th className="text-center px-2 py-2.5 text-muted-foreground font-medium w-8">★</th>
-                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">时间</th>
-                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">模型</th>
-                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">上游</th>
-                  <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">Token</th>
-                  <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">耗时</th>
-                  <th className="text-center px-4 py-2.5 text-muted-foreground font-medium">状态</th>
-                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">标签</th>
+                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">{t("logs.time")}</th>
+                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">{t("logs.model")}</th>
+                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">{t("logs.upstream")}</th>
+                  <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">{t("logs.token")}</th>
+                  <th className="text-right px-4 py-2.5 text-muted-foreground font-medium">{t("logs.duration")}</th>
+                  <th className="text-center px-4 py-2.5 text-muted-foreground font-medium">{t("logs.status")}</th>
+                  <th className="text-left px-4 py-2.5 text-muted-foreground font-medium">{t("logs.tags")}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading && (
-                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">加载中...</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">{t("common.loading")}</td></tr>
                 )}
                 {!loading && logs.length === 0 && (
-                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">暂无记录</td></tr>
+                  <tr><td colSpan={8} className="text-center py-8 text-muted-foreground">{t("logs.no_records")}</td></tr>
                 )}
                 {logs.map((log) => (
                   <LogRow key={log.id} log={log} expanded={expandedId === log.id}
@@ -311,7 +312,7 @@ const LogsPage = ({ initialExpandId, onConsumeExpandId }: LogsPageProps) => {
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm text-muted-foreground">{page} / {totalPages}（共 {total} 条）</span>
+          <span className="text-sm text-muted-foreground">{page} / {totalPages} {t("logs.page_info", { total })}</span>
           <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}>
             <ChevronRight className="h-4 w-4" />
           </Button>
@@ -372,8 +373,8 @@ function LogRow({ log, expanded, onToggle, parseMessages, parseToolCalls, onExpo
         </td>
         <td className="px-4 py-2.5">
           <div className="flex flex-wrap gap-1">
-            {log.tags && log.tags.split(",").filter(Boolean).map(t => (
-              <Badge key={t} variant="secondary" className="text-[10px] px-1.5 py-0">{t}</Badge>
+            {log.tags && log.tags.split(",").filter(Boolean).map(tVal => (
+              <Badge key={tVal} variant="secondary" className="text-[10px] px-1.5 py-0">{tVal}</Badge>
             ))}
             {log.note && <StickyNote className="h-3 w-3 text-yellow-500/70" />}
           </div>
@@ -407,14 +408,15 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, o
   const chatMessages = messages.filter((m) => m.role !== "system");
   const toolCalls = parseToolCalls(log.tool_calls);
   const [showRawError, setShowRawError] = useState(false);
+  const { t } = useI18n();
 
   const handleCopyContext = () => {
     try {
       const formatted = JSON.stringify(messages, null, 2);
       navigator.clipboard.writeText(formatted);
-      toast({ title: "已复制完整上下文到剪贴板" });
+      toast({ title: t("logs.copied_context") });
     } catch {
-      toast({ title: "复制失败", variant: "destructive" });
+      toast({ title: t("logs.copy_failed"), variant: "destructive" });
     }
   };
 
@@ -430,9 +432,9 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, o
         promptParts.push(`[${msg.role}]\n${content}`);
       }
       navigator.clipboard.writeText(promptParts.join("\n\n"));
-      toast({ title: "已复制 Prompt 到剪贴板" });
+      toast({ title: t("logs.copied_prompt") });
     } catch {
-      toast({ title: "复制失败", variant: "destructive" });
+      toast({ title: t("logs.copy_failed"), variant: "destructive" });
     }
   };
 
@@ -443,13 +445,13 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, o
       {/* Action buttons */}
       <div className="flex gap-2 flex-wrap">
         <Button variant="outline" size="sm" onClick={handleCopyPrompt}>
-          <Copy className="h-3.5 w-3.5 mr-1" /> 复制 Prompt
+          <Copy className="h-3.5 w-3.5 mr-1" /> {t("logs.copy_prompt")}
         </Button>
         <Button variant="outline" size="sm" onClick={handleCopyContext}>
-          <Copy className="h-3.5 w-3.5 mr-1" /> 复制 JSON
+          <Copy className="h-3.5 w-3.5 mr-1" /> {t("logs.copy_json")}
         </Button>
         <Button variant="outline" size="sm" onClick={onExportConversation}>
-          <FileDown className="h-3.5 w-3.5 mr-1" /> 导出对话
+          <FileDown className="h-3.5 w-3.5 mr-1" /> {t("logs.export_conv")}
         </Button>
       </div>
 
@@ -464,7 +466,7 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, o
         <div className="rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-3 space-y-2">
           <div className="flex items-center gap-2 text-destructive font-medium text-sm">
             <AlertTriangle className="h-4 w-4" />
-            <span>请求失败 — HTTP {log.status_code}</span>
+            <span>{t("logs.request_failed")} — HTTP {log.status_code}</span>
           </div>
           {log.error_message && (
             <>
@@ -472,7 +474,7 @@ function LogDetail({ log, parseMessages, parseToolCalls, onExportConversation, o
               {log.error_message.length < 200 && (
                 <Collapsible open={showRawError} onOpenChange={setShowRawError}>
                   <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
-                    <ChevronDown className="h-3 w-3" /> 查看原始错误
+                    <ChevronDown className="h-3 w-3" /> {t("logs.view_raw_error")}
                   </CollapsibleTrigger>
                   <CollapsibleContent className="mt-2">
                     <pre className="rounded bg-secondary px-3 py-2 text-xs overflow-x-auto max-h-48 text-muted-foreground">

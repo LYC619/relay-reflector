@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Tag, StickyNote, X, Plus, Check } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 export const PRESET_TAGS = ["写作类", "代码类", "角色扮演", "翻译", "分析", "创意"];
 
@@ -46,29 +47,30 @@ export function TagEditor({ log, onUpdateTags, availableTags }: {
   const currentTags = log.tags ? log.tags.split(",").filter(Boolean) : [];
   const [newTag, setNewTag] = useState("");
   const [showInput, setShowInput] = useState(false);
+  const { t } = useI18n();
 
   const addTag = (tag: string) => {
-    const t = tag.trim();
-    if (!t || currentTags.includes(t)) return;
-    onUpdateTags(log.id, [...currentTags, t].join(","));
+    const tVal = tag.trim();
+    if (!tVal || currentTags.includes(tVal)) return;
+    onUpdateTags(log.id, [...currentTags, tVal].join(","));
     setNewTag("");
     setShowInput(false);
   };
 
   const removeTag = (tag: string) => {
-    onUpdateTags(log.id, currentTags.filter(t => t !== tag).join(","));
+    onUpdateTags(log.id, currentTags.filter(tVal => tVal !== tag).join(","));
   };
 
-  const unusedTags = availableTags.filter(t => !currentTags.includes(t));
+  const unusedTags = availableTags.filter(tVal => !currentTags.includes(tVal));
 
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 flex-wrap">
         <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-        {currentTags.map(t => (
-          <Badge key={t} variant="secondary" className="gap-1 text-xs">
-            {t}
-            <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => removeTag(t)} />
+        {currentTags.map(tVal => (
+          <Badge key={tVal} variant="secondary" className="gap-1 text-xs">
+            {tVal}
+            <X className="h-3 w-3 cursor-pointer hover:text-destructive" onClick={() => removeTag(tVal)} />
           </Badge>
         ))}
         {showInput ? (
@@ -77,7 +79,7 @@ export function TagEditor({ log, onUpdateTags, availableTags }: {
               value={newTag}
               onChange={(e) => setNewTag(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && addTag(newTag)}
-              placeholder="输入标签..."
+              placeholder={t("shared.tag_placeholder")}
               className="h-6 w-24 text-xs bg-secondary border-border"
               autoFocus
             />
@@ -96,11 +98,11 @@ export function TagEditor({ log, onUpdateTags, availableTags }: {
       </div>
       {showInput && unusedTags.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {unusedTags.map(t => (
-            <Badge key={t} variant="outline"
+          {unusedTags.map(tVal => (
+            <Badge key={tVal} variant="outline"
               className="text-[10px] cursor-pointer hover:bg-secondary"
-              onClick={() => addTag(t)}
-            >{t}</Badge>
+              onClick={() => addTag(tVal)}
+            >{tVal}</Badge>
           ))}
         </div>
       )}
@@ -114,6 +116,7 @@ export function NoteEditor({ log, onUpdateNote }: {
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(log.note || "");
+  const { t } = useI18n();
 
   const save = () => {
     onUpdateNote(log.id, draft);
@@ -123,7 +126,7 @@ export function NoteEditor({ log, onUpdateNote }: {
   if (!editing && !log.note) {
     return (
       <Button variant="ghost" size="sm" className="text-xs text-muted-foreground gap-1" onClick={() => setEditing(true)}>
-        <StickyNote className="h-3.5 w-3.5" /> 添加备注
+        <StickyNote className="h-3.5 w-3.5" /> {t("shared.add_note")}
       </Button>
     );
   }
@@ -134,13 +137,13 @@ export function NoteEditor({ log, onUpdateNote }: {
         <Textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder="记录一下这条 Prompt 好在哪，或从哪个场景抓到的..."
+          placeholder={t("shared.note_placeholder")}
           className="min-h-[60px] text-sm bg-secondary border-border"
           autoFocus
         />
         <div className="flex gap-2">
-          <Button size="sm" onClick={save} className="text-xs">保存</Button>
-          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(log.note || ""); }} className="text-xs">取消</Button>
+          <Button size="sm" onClick={save} className="text-xs">{t("shared.note_save")}</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setEditing(false); setDraft(log.note || ""); }} className="text-xs">{t("shared.note_cancel")}</Button>
         </div>
       </div>
     );
@@ -149,7 +152,7 @@ export function NoteEditor({ log, onUpdateNote }: {
   return (
     <div className="rounded-lg bg-yellow-500/5 border border-yellow-500/20 px-3 py-2 space-y-1 cursor-pointer" onClick={() => setEditing(true)}>
       <div className="flex items-center gap-1.5 text-xs text-yellow-500/70 font-medium">
-        <StickyNote className="h-3 w-3" /> 备注
+        <StickyNote className="h-3 w-3" /> {t("shared.note")}
       </div>
       <p className="text-sm text-foreground/80 whitespace-pre-wrap">{log.note}</p>
     </div>

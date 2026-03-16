@@ -3,6 +3,7 @@ import { login } from "@/lib/api";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Activity, Lock } from "lucide-react";
+import { useI18n } from "@/lib/i18n";
 
 interface LoginPageProps {
   onLogin: () => void;
@@ -12,6 +13,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const { t } = useI18n();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,7 +23,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
       await login(password);
       onLogin();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "密码错误");
+      setError(err instanceof Error ? err.message : t("login.error"));
     } finally {
       setLoading(false);
     }
@@ -35,14 +37,14 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
             <Activity className="h-6 w-6 text-primary-foreground" />
           </div>
           <h1 className="text-xl font-bold text-foreground">API Log</h1>
-          <p className="text-sm text-muted-foreground">AI API 对话记录器</p>
+          <p className="text-sm text-muted-foreground">{t("login.subtitle")}</p>
         </div>
         <div className="space-y-3">
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               type="password"
-              placeholder="输入管理密码"
+              placeholder={t("login.placeholder")}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="bg-secondary border-border pl-10"
@@ -51,7 +53,7 @@ const LoginPage = ({ onLogin }: LoginPageProps) => {
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <Button type="submit" className="w-full" disabled={loading}>
-          {loading ? "验证中..." : "登录"}
+          {loading ? t("login.loading") : t("login.button")}
         </Button>
       </form>
     </div>

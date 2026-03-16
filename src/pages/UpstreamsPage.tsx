@@ -19,6 +19,7 @@ import {
   Plus, Power, Pencil, Trash2, Wifi, Loader2, Globe, Timer
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/lib/i18n";
 
 const UpstreamsPage = () => {
   const [upstreams, setUpstreams] = useState<Upstream[]>([]);
@@ -30,6 +31,7 @@ const UpstreamsPage = () => {
   const [customHeaders, setCustomHeaders] = useState("{}");
   const [testing, setTesting] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, { ok: boolean; latency_ms: number }>>({});
+  const { t } = useI18n();
 
   const load = () => {
     fetchUpstreams().then(setUpstreams).catch(console.error).finally(() => setLoading(false));
@@ -39,11 +41,10 @@ const UpstreamsPage = () => {
 
   const handleSave = async () => {
     try {
-      // Validate custom headers JSON
       try {
         JSON.parse(customHeaders);
       } catch {
-        toast({ title: "自定义请求头格式错误", description: "请输入有效的 JSON 格式", variant: "destructive" });
+        toast({ title: t("up.headers_invalid"), description: t("up.headers_invalid_desc"), variant: "destructive" });
         return;
       }
 
@@ -54,10 +55,8 @@ const UpstreamsPage = () => {
       }
       setDialogOpen(false);
 
-      // Auto-test after adding new upstream
       if (!editingId) {
         load();
-        // Wait for upstream list to reload, then find the new one and test it
         const upstreamList = await fetchUpstreams();
         const newUpstream = upstreamList.find(u => u.name === name && u.url === url);
         if (newUpstream) {
@@ -99,53 +98,53 @@ const UpstreamsPage = () => {
       const result = await testUpstream(id);
       setTestResults(prev => ({ ...prev, [id]: { ok: result.ok, latency_ms: result.latency_ms } }));
       toast({
-        title: result.ok ? "连接成功" : "连接失败",
+        title: result.ok ? t("up.connected") : t("up.conn_failed"),
         description: result.ok
-          ? `状态码: ${result.status}，延迟: ${result.latency_ms}ms`
+          ? `Status: ${result.status}, Latency: ${result.latency_ms}ms`
           : result.body.slice(0, 200),
         variant: result.ok ? "default" : "destructive",
       });
     } catch (e) {
-      toast({ title: "测试失败", description: String(e), variant: "destructive" });
+      toast({ title: t("up.test_failed"), description: String(e), variant: "destructive" });
     } finally {
       setTesting(null);
     }
   };
 
-  if (loading) return <p className="text-muted-foreground text-center py-12">加载中...</p>;
+  if (loading) return <p className="text-muted-foreground text-center py-12">{t("common.loading")}</p>;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-foreground">上游管理</h2>
+        <h2 className="text-2xl font-bold text-foreground">{t("up.title")}</h2>
         <Dialog open={dialogOpen} onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) { setEditingId(null); setName(""); setUrl(""); setCustomHeaders("{}"); }
         }}>
           <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-1" /> 添加上游</Button>
+            <Button><Plus className="h-4 w-4 mr-1" /> {t("up.add")}</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{editingId ? "编辑上游" : "添加上游"}</DialogTitle>
+              <DialogTitle>{editingId ? t("up.edit") : t("up.add")}</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label>名称</Label>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="如：主站 New API" />
+                <Label>{t("up.name")}</Label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={t("up.name_placeholder")} />
               </div>
               <div className="space-y-2">
-                <Label>URL</Label>
+                <Label>{t("up.url")}</Label>
                 <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://127.0.0.1:3000" className="font-mono" />
               </div>
               <div className="space-y-2">
-                <Label>自定义请求头 (JSON)</Label>
+                <Label>{t("up.headers")}</Label>
                 <Textarea value={customHeaders} onChange={(e) => setCustomHeaders(e.target.value)}
                   placeholder='{"X-Custom-Header": "value"}' className="font-mono text-xs h-20" />
               </div>
             </div>
             <DialogFooter>
-              <Button onClick={handleSave} disabled={!name || !url}>保存</Button>
+              <Button onClick={handleSave} disabled={!name || !url}>{t("up.save")}</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -154,8 +153,8 @@ const UpstreamsPage = () => {
       {upstreams.length === 0 && (
         <div className="text-center py-12 text-muted-foreground">
           <Globe className="h-12 w-12 mx-auto mb-3 opacity-30" />
-          <p>还没有添加任何上游地址</p>
-          <p className="text-xs mt-1">点击「添加上游」开始配置</p>
+          <p>{t("up.empty_title")}</p>
+          <p className="text-xs mt-1">{t("up.empty_hint")}</p>
         </div>
       )}
 
@@ -169,7 +168,7 @@ const UpstreamsPage = () => {
                     <h3 className="font-semibold text-foreground">{u.name}</h3>
                     {u.is_active ? (
                       <span className="text-[10px] uppercase bg-primary/20 text-primary px-2 py-0.5 rounded font-semibold">
-                        激活
+                        {t("up.active")}
                       </span>
                     ) : null}
                   </div>
@@ -185,21 +184,21 @@ const UpstreamsPage = () => {
                 )}
               </div>
               <div className="flex gap-4 text-xs text-muted-foreground">
-                <span>请求: {u.total_requests}</span>
-                <span>最后使用: {u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "—"}</span>
+                <span>{t("up.requests")}: {u.total_requests}</span>
+                <span>{t("up.last_used")}: {u.last_used_at ? new Date(u.last_used_at).toLocaleString() : "—"}</span>
               </div>
               <div className="flex gap-2 pt-1 flex-wrap">
                 {!u.is_active && (
                   <Button variant="outline" size="sm" onClick={() => handleActivate(u.id)}>
-                    <Power className="h-3.5 w-3.5 mr-1" /> 激活
+                    <Power className="h-3.5 w-3.5 mr-1" /> {t("up.activate")}
                   </Button>
                 )}
                 <Button variant="outline" size="sm" onClick={() => handleEdit(u)}>
-                  <Pencil className="h-3.5 w-3.5 mr-1" /> 编辑
+                  <Pencil className="h-3.5 w-3.5 mr-1" /> {t("up.edit_btn")}
                 </Button>
                 <Button variant="outline" size="sm" onClick={() => handleTest(u.id)} disabled={testing === u.id}>
                   {testing === u.id ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Wifi className="h-3.5 w-3.5 mr-1" />}
-                  测试
+                  {t("up.test")}
                 </Button>
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -209,12 +208,12 @@ const UpstreamsPage = () => {
                   </AlertDialogTrigger>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>确认删除</AlertDialogTitle>
-                      <AlertDialogDescription>确定要删除上游「{u.name}」吗？此操作不可恢复。</AlertDialogDescription>
+                      <AlertDialogTitle>{t("up.confirm_delete")}</AlertDialogTitle>
+                      <AlertDialogDescription>{t("up.delete_desc", { name: u.name })}</AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel>取消</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => handleDelete(u.id)}>删除</AlertDialogAction>
+                      <AlertDialogCancel>{t("up.cancel")}</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleDelete(u.id)}>{t("up.delete")}</AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
